@@ -1,7 +1,7 @@
 # Skill: tito-pdf (PDF → Markdown + Tables, determinístico)
 
 ## Objetivo
-`tito-pdf` es un helper local (sin LLM / sin claude-flow) para convertir un PDF a:
+`tito-pdf` es un helper local (sin LLM / sin claude-flow) para convertir un PDF/DOCX a:
 - `md/<id>.retrieve.md` (Markdown con headings best-effort)
 - `md/<id>.retrieve.tables.md` (tablas separadas, estilo TITO)
 - `sessions/run-.../` (artefactos + audit JSON)
@@ -14,7 +14,7 @@ Este skill está inspirado por el pipeline de `tito retrieve`, pero reemplaza la
 - Es determinístico/offline: depende de herramientas locales (qpdf/gs/ocrmypdf/tesseract) y librerías Python.
 
 ## Setup (una vez)
-Desde `~/github/garage/pdf`:
+Desde el root del repo:
 
 ```bash
 python3 -m venv .venv

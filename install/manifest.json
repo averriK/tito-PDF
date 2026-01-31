@@ -1,0 +1,12 @@
+{
+  "manifest_version": 1,
+  "binaries": [
+    {
+      "name": "tito-pdf",
+      "install_dir": "/usr/local/bin"
+    }
+  ],
+  "libexec": {
+    "install_dir": "/usr/local/libexec/tito-pdf"
+  }
+}
