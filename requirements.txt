@@ -1,0 +1,12 @@
+# Core PDF parsing (layout-aware text extraction)
+PyMuPDF>=1.23.0
+
+# Table extraction fallback (also useful for some PDFs)
+pdfplumber>=0.10.0
+pandas>=2.0.0
+
+# OCR (CLI provided by this package; also requires system deps like tesseract)
+ocrmypdf>=16.0.0
+
+# Optional (better table extraction for many vector PDFs):
+# camelot-py[cv]>=0.11.0

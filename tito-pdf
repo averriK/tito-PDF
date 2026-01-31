@@ -1,0 +1,1157 @@
+#!/usr/bin/env python3
+"""tito-pdf
+
+Deterministic, local-only PDF -> Markdown helper inspired by TITO's `retrieve`
+pipeline, but WITHOUT LLM/claude-flow.
+
+Outputs (TITO-like naming):
+- md/<id>.retrieve.md
+- md/<id>.retrieve.tables.md (separate tables file)
+- sessions/run-YYYYMMDD_HHMMSS/... (artifacts + audit json)
+
+Notes:
+- OCR is performed via `ocrmypdf` when available (requires tesseract).
+- Headings are best-effort and depend on PDF layout/text layer quality.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+
+def _eprint(*args: object) -> None:
+    print(*args, file=sys.stderr)
+
+
+def _which(cmd: str) -> Optional[str]:
+    return shutil.which(cmd)
+
+
+def _run(cmd: Sequence[str], *, cwd: Optional[Path] = None) -> None:
+    # Keep logs concise (no huge stdout dumps).
+    _eprint("+", " ".join(cmd))
+    p = subprocess.run(
+        list(cmd),
+        cwd=str(cwd) if cwd else None,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if p.returncode != 0:
+        tail = (p.stderr or p.stdout or "").strip().splitlines()[-5:]
+        msg = "\n".join(tail).strip()
+        raise RuntimeError(f"command failed: {' '.join(cmd)}\n{msg}")
+
+
+def _slugify_id(name: str) -> str:
+    s = (name or "").strip()
+    s = re.sub(r"\.[Pp][Dd][Ff]$", "", s)
+    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s)
+    s = s.strip("._-")
+    return s or "doc"
+
+
+def _ts_run_id() -> str:
+    return datetime.now().strftime("run-%Y%m%d_%H%M%S")
+
+
+def _readable_bytes(n: int) -> str:
+    if n < 1024:
+        return f"{n}B"
+    if n < 1024 * 1024:
+        return f"{n/1024:.1f}KB"
+    return f"{n/(1024*1024):.1f}MB"
+
+
+def prepare_pdf(*, input_pdf: Path, output_pdf: Path, strip_images: bool = True) -> None:
+    """Prepare a working copy for downstream parsing.
+
+    Steps (best-effort):
+    - Decrypt/normalize via qpdf (if available).
+    - Optionally strip raster images via Ghostscript (-dFILTERIMAGE).
+
+    IMPORTANT (OCR): If you plan to run OCR, do NOT strip images before OCR.
+    """
+
+    qpdf = _which("qpdf")
+    gs = _which("gs")
+    output_pdf.parent.mkdir(parents=True, exist_ok=True)
+
+    tmp = output_pdf.with_suffix(".qpdf.tmp.pdf")
+    if tmp.exists():
+        tmp.unlink()
+
+    # 1) Decrypt/normalize (when possible)
+    if qpdf:
+        try:
+            _run([qpdf, "--decrypt", str(input_pdf), str(tmp)])
+        except Exception:
+            if tmp.exists():
+                tmp.unlink()
+            shutil.copy2(input_pdf, output_pdf)
+            return
+        src_for_gs = tmp
+    else:
+        src_for_gs = input_pdf
+
+    try:
+        # 2) Optional image stripping
+        if strip_images and gs:
+            _run([gs, "-q", "-o", str(output_pdf), "-sDEVICE=pdfwrite", "-dFILTERIMAGE", str(src_for_gs)])
+        else:
+            shutil.copy2(src_for_gs, output_pdf)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def ocr_pdf(*, input_pdf: Path, output_pdf: Path, force: bool) -> bool:
+    """Run OCR via ocrmypdf (if available). Returns True if OCR was run."""
+
+    ocrmypdf = _which("ocrmypdf")
+    output_pdf.parent.mkdir(parents=True, exist_ok=True)
+
+    if not ocrmypdf:
+        shutil.copy2(input_pdf, output_pdf)
+        return False
+
+    cmd = [ocrmypdf, "--quiet"]
+    # Avoid rewriting text-based PDFs unless forced.
+    cmd += ["--force-ocr"] if force else ["--skip-text"]
+    # Keep output deterministic-ish and stable.
+    cmd += ["--output-type", "pdf"]
+    cmd += [str(input_pdf), str(output_pdf)]
+
+    try:
+        _run(cmd)
+        return True
+    except Exception as e:
+        _eprint(f"WARNING: OCR failed ({e}); continuing without OCR")
+        shutil.copy2(input_pdf, output_pdf)
+        return False
+
+
+@dataclass(frozen=True)
+class PdfLine:
+    page: int
+    text: str
+    size: float
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    page_w: float
+    page_h: float
+    bold: bool
+
+
+def _norm_text(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "")).strip()
+
+
+def _looks_like_page_number(s: str) -> bool:
+    t = _norm_text(s).lower()
+    if re.fullmatch(r"\d{1,4}", t or ""):
+        return True
+    if re.fullmatch(r"page\s+\d{1,4}(\s+of\s+\d{1,4})?", t or ""):
+        return True
+    return False
+
+
+def extract_lines_layout(pdf_path: Path, *, max_pages: int = 0) -> List[PdfLine]:
+    try:
+        import fitz  # PyMuPDF
+    except Exception as e:
+        raise SystemExit(
+            "PyMuPDF is required for layout-aware extraction. Install it with: pip install PyMuPDF\n"
+            f"Import error: {e}"
+        )
+
+    doc = fitz.open(str(pdf_path))
+    out: List[PdfLine] = []
+
+    n_pages = doc.page_count
+    if max_pages and max_pages > 0:
+        n_pages = min(n_pages, max_pages)
+
+    for pno in range(n_pages):
+        page = doc.load_page(pno)
+        page_w = float(page.rect.width)
+        page_h = float(page.rect.height)
+        d = page.get_text("dict")
+        for b in d.get("blocks", []):
+            if b.get("type") != 0:
+                continue
+            for ln in b.get("lines", []):
+                spans = ln.get("spans", [])
+                parts: List[str] = []
+                sizes: List[float] = []
+                fonts: List[str] = []
+                for sp in spans:
+                    t = sp.get("text", "")
+                    if not t:
+                        continue
+                    parts.append(t)
+                    try:
+                        sizes.append(float(sp.get("size", 0.0)))
+                    except Exception:
+                        pass
+                    fonts.append(str(sp.get("font", "")))
+
+                txt = _norm_text("".join(parts))
+                if not txt:
+                    continue
+
+                x0, y0, x1, y1 = map(float, ln.get("bbox", [0, 0, 0, 0]))
+                size = 0.0
+                if sizes:
+                    sizes2 = sorted(sizes)
+                    size = float(sizes2[len(sizes2) // 2])
+
+                bold = any("bold" in f.lower() for f in fonts)
+
+                out.append(
+                    PdfLine(
+                        page=pno + 1,
+                        text=txt,
+                        size=size,
+                        x0=x0,
+                        y0=y0,
+                        x1=x1,
+                        y1=y1,
+                        page_w=page_w,
+                        page_h=page_h,
+                        bold=bold,
+                    )
+                )
+
+    return out
+
+
+def drop_repeated_headers_footers(lines: List[PdfLine]) -> List[PdfLine]:
+    # If too few pages, this heuristic is noisy.
+    pages = sorted({l.page for l in lines})
+    if len(pages) < 3:
+        return [l for l in lines if not _looks_like_page_number(l.text)]
+
+    top = Counter()
+    bottom = Counter()
+    per_page: Dict[int, List[PdfLine]] = {}
+    for l in lines:
+        per_page.setdefault(l.page, []).append(l)
+
+    for p in pages:
+        page_lines = per_page.get(p, [])
+        for l in page_lines:
+            t = _norm_text(l.text)
+            if not t:
+                continue
+            if len(t) > 80:
+                continue
+            if l.y1 <= 0.12 * l.page_h:
+                top[t] += 1
+            if l.y0 >= 0.88 * l.page_h:
+                bottom[t] += 1
+
+    thresh = max(2, int(len(pages) * 0.6))
+    drop = {t for (t, c) in top.items() if c >= thresh}
+    drop |= {t for (t, c) in bottom.items() if c >= thresh}
+
+    out: List[PdfLine] = []
+    for l in lines:
+        t = _norm_text(l.text)
+        if _looks_like_page_number(t):
+            continue
+        if t in drop:
+            continue
+        out.append(l)
+
+    return out
+
+
+def infer_body_font_size(lines: List[PdfLine]) -> float:
+    # Use mode of rounded sizes on "normal" length lines.
+    sizes: List[float] = []
+    for l in lines:
+        if l.size <= 0 or l.size > 72:
+            continue
+        t = l.text.strip()
+        if len(t) < 30:
+            continue
+        sizes.append(round(l.size * 2) / 2.0)  # round to 0.5
+
+    if not sizes:
+        return 12.0
+
+    c = Counter(sizes)
+    body = c.most_common(1)[0][0]
+    return float(body)
+
+
+def _is_centered(l: PdfLine) -> bool:
+    cx = (l.x0 + l.x1) / 2.0
+    return abs(cx - (l.page_w / 2.0)) <= (l.page_w * 0.12)
+
+
+def _is_heading(l: PdfLine, body_size: float) -> bool:
+    t = l.text.strip()
+    if len(t) < 2 or len(t) > 140:
+        return False
+
+    # Avoid treating sentences as headings.
+    if t.endswith(".") and len(t) > 40:
+        return False
+
+    # Primary: size-based.
+    if l.size >= body_size * 1.35:
+        return True
+
+    # Fallbacks for OCR/uniform-font PDFs.
+    if l.bold and len(t) <= 80:
+        return True
+    if _is_centered(l) and len(t) <= 80 and (t.isupper() or re.match(r"^\d+(?:\.\d+)*\s+\S+", t)):
+        return True
+    if t.isupper() and 5 <= len(t) <= 60:
+        return True
+
+    return False
+
+
+def _heading_level(l: PdfLine, body_size: float) -> int:
+    # 1..6
+    if l.size >= body_size * 1.7:
+        return 1
+    if l.size >= body_size * 1.5:
+        return 2
+    if l.size >= body_size * 1.35:
+        return 3
+
+    # OCR/uniform font fallbacks
+    t = l.text.strip()
+    m = re.match(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?\s+", t)
+    if m:
+        # More dots -> deeper level
+        dots = sum(1 for g in m.groups()[1:] if g)
+        return min(4 + dots, 6)
+
+    return 3
+
+
+def _is_list_item(text: str) -> bool:
+    t = text.lstrip()
+    if re.match(r"^[-*•]\s+\S+", t):
+        return True
+    if re.match(r"^\d+[\).]\s+\S+", t):
+        return True
+    return False
+
+
+def _clean_list_marker(text: str) -> str:
+    t = text.lstrip()
+    if re.match(r"^\d+[\).]\s+", t):
+        return re.sub(r"^\d+[\).]\s+", "1. ", t)
+    if re.match(r"^[-*•]\s+", t):
+        return re.sub(r"^[-*•]\s+", "- ", t)
+    return "- " + t
+
+
+def lines_to_markdown(lines: List[PdfLine]) -> str:
+    # Sort in reading order: page, y0, x0
+    lines2 = sorted(lines, key=lambda l: (l.page, l.y0, l.x0))
+    body = infer_body_font_size(lines2)
+
+    out: List[str] = []
+    para = ""
+    prev: Optional[PdfLine] = None
+
+    def flush_para() -> None:
+        nonlocal para
+        if para.strip():
+            out.append(para.strip())
+            out.append("")
+        para = ""
+
+    for l in lines2:
+        t = l.text.strip()
+        if not t:
+            continue
+
+        if _is_heading(l, body):
+            flush_para()
+            level = _heading_level(l, body)
+            out.append("#" * level + " " + t)
+            out.append("")
+            prev = l
+            continue
+
+        if _is_list_item(t):
+            flush_para()
+            out.append(_clean_list_marker(t))
+            prev = l
+            continue
+
+        # Paragraph joining
+        if not para:
+            para = t
+            prev = l
+            continue
+
+        gap = 0.0
+        if prev is not None and prev.page == l.page:
+            gap = max(0.0, l.y0 - prev.y1)
+
+        # New paragraph on big vertical gap.
+        if gap > max(6.0, body * 0.9):
+            flush_para()
+            para = t
+            prev = l
+            continue
+
+        # Hyphenation repair
+        if para.endswith("-") and t and t[0].islower():
+            para = para[:-1] + t
+        else:
+            para = para + " " + t
+
+        prev = l
+
+    flush_para()
+
+    # Trim trailing blank lines.
+    while out and out[-1] == "":
+        out.pop()
+
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def lines_to_text(lines: List[PdfLine]) -> str:
+    """Plaintext export for downstream slicing/cleaning (no Markdown)."""
+
+    # Sort in reading order: page, y0, x0
+    lines2 = sorted(lines, key=lambda l: (l.page, l.y0, l.x0))
+    body = infer_body_font_size(lines2)
+
+    out: List[str] = []
+    para = ""
+    prev: Optional[PdfLine] = None
+
+    def flush_para() -> None:
+        nonlocal para
+        if para.strip():
+            out.append(para.strip())
+            out.append("")
+        para = ""
+
+    for l in lines2:
+        t = l.text.strip()
+        if not t:
+            continue
+
+        if not para:
+            para = t
+            prev = l
+            continue
+
+        gap = 0.0
+        if prev is not None and prev.page == l.page:
+            gap = max(0.0, l.y0 - prev.y1)
+
+        # New paragraph on page breaks or big vertical gap.
+        if prev is not None and prev.page != l.page:
+            flush_para()
+            para = t
+            prev = l
+            continue
+        if gap > max(6.0, body * 0.9):
+            flush_para()
+            para = t
+            prev = l
+            continue
+
+        # Hyphenation repair
+        if para.endswith("-") and t and t[0].islower():
+            para = para[:-1] + t
+        else:
+            para = para + " " + t
+
+        prev = l
+
+    flush_para()
+
+    # Trim trailing blank lines.
+    while out and out[-1] == "":
+        out.pop()
+
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def _escape_cell(s: str) -> str:
+    return (s or "").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def rows_to_markdown_table(rows: List[List[str]]) -> Optional[List[str]]:
+    if not rows:
+        return None
+
+    # Drop fully-empty rows
+    rows2 = []
+    for r in rows:
+        rr = ["" if c is None else str(c) for c in r]
+        if any(_norm_text(c) for c in rr):
+            rows2.append(rr)
+
+    if not rows2:
+        return None
+
+    max_cols = max(len(r) for r in rows2)
+    if max_cols < 2:
+        return None
+
+    norm: List[List[str]] = []
+    for r in rows2:
+        if len(r) < max_cols:
+            r = r + ([""] * (max_cols - len(r)))
+        elif len(r) > max_cols:
+            head = r[: max_cols - 1]
+            tail = r[max_cols - 1 :]
+            r = head + [" / ".join(tail)]
+        norm.append([_escape_cell(c) for c in r])
+
+    header = norm[0]
+    if not any(_norm_text(c) for c in header):
+        header = [f"Col{i+1}" for i in range(max_cols)]
+
+    sep = ["---"] * max_cols
+
+    out: List[str] = []
+    out.append("| " + " | ".join(header) + " |")
+    out.append("| " + " | ".join(sep) + " |")
+
+    for r in norm[1:]:
+        out.append("| " + " | ".join(r) + " |")
+
+    return out
+
+
+def extract_tables(
+    pdf_path: Path,
+    *,
+    max_pages: int = 0,
+    lenient: bool = False,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Return (audit_tables, tables_markdown_lines).
+
+    Goal: robust *deterministic* table extraction (no LLM).
+
+    Strategy:
+    - Prefer PyMuPDF's built-in table finder first (already a dependency for text extraction).
+    - Optional lenient mode enables text-based strategies (higher recall, higher risk).
+    - Deduplicate tables across strategies by content signature.
+    """
+
+    audit: List[Dict[str, Any]] = []
+    out_md: List[str] = []
+    seen: set[str] = set()
+
+    def table_signature(rows: List[List[str]]) -> str:
+        import hashlib
+
+        parts: List[str] = []
+        for r in rows:
+            parts.append("|".join(_norm_text(str(c or "")) for c in r))
+        blob = "\n".join(parts).encode("utf-8", errors="replace")
+        return hashlib.sha1(blob).hexdigest()
+
+    def table_stats(rows: List[List[str]]) -> Dict[str, Any]:
+        cells = [c for r in rows for c in r]
+        nonempty = [c for c in cells if _norm_text(c)]
+
+        empty_ratio = 1.0
+        if cells:
+            empty_ratio = 1.0 - (len(nonempty) / max(1, len(cells)))
+
+        digit_cells = [c for c in nonempty if re.search(r"\d", c)]
+        digit_ratio = (len(digit_cells) / max(1, len(nonempty))) if nonempty else 0.0
+
+        return {
+            "rows": len(rows),
+            "cols": max((len(r) for r in rows), default=0),
+            "cells_total": len(cells),
+            "cells_nonempty": len(nonempty),
+            "empty_ratio": round(float(empty_ratio), 4),
+            "digit_ratio": round(float(digit_ratio), 4),
+        }
+
+    def bbox_stats(*, bbox: Tuple[float, float, float, float], page_w: float, page_h: float) -> Dict[str, Any]:
+        x0, top, x1, bottom = bbox
+        w = max(0.0, float(x1) - float(x0))
+        h = max(0.0, float(bottom) - float(top))
+        area = w * h
+        page_area = max(1.0, float(page_w) * float(page_h))
+        return {
+            "bbox": [float(x0), float(top), float(x1), float(bottom)],
+            "width_ratio": round(w / max(1.0, float(page_w)), 4),
+            "height_ratio": round(h / max(1.0, float(page_h)), 4),
+            "area_ratio": round(area / page_area, 4),
+            "top_ratio": round(float(top) / max(1.0, float(page_h)), 4),
+            "bottom_ratio": round(float(bottom) / max(1.0, float(page_h)), 4),
+        }
+
+    def should_accept(
+        *,
+        stats: Dict[str, Any],
+        bbox_meta: Optional[Dict[str, Any]],
+        mode: str,
+        tool: str,
+    ) -> Tuple[bool, str]:
+        r = int(stats.get("rows", 0) or 0)
+        c = int(stats.get("cols", 0) or 0)
+        empty_ratio = float(stats.get("empty_ratio", 1.0) or 1.0)
+        digit_ratio = float(stats.get("digit_ratio", 0.0) or 0.0)
+
+        cells_total = int(stats.get("cells_total", 0) or 0)
+        cells_nonempty = int(stats.get("cells_nonempty", 0) or 0)
+
+        if r < 2 or c < 2:
+            return False, "too_small"
+        if c > 30:
+            return False, "too_many_cols"
+        if r > 500:
+            return False, "too_many_rows"
+
+        # Drop very small 2-row grids unless they are almost fully populated.
+        # (Common false-positive: drawing title blocks and page furniture.)
+        if r == 2 and c >= 3:
+            filled = (cells_nonempty / max(1, cells_total)) if cells_total else 0.0
+            if filled < 0.90:
+                return False, "two_row_sparse_grid"
+
+        if empty_ratio > 0.85:
+            return False, "too_sparse"
+
+        # Drop tiny header/footer blocks (often page furniture).
+        if bbox_meta:
+            hr = float(bbox_meta.get("height_ratio", 0.0) or 0.0)
+            tr = float(bbox_meta.get("top_ratio", 0.0) or 0.0)
+            br = float(bbox_meta.get("bottom_ratio", 0.0) or 0.0)
+            ar = float(bbox_meta.get("area_ratio", 0.0) or 0.0)
+
+            if hr < 0.05 and r <= 6 and (tr < 0.12 or br > 0.88) and digit_ratio < 0.35:
+                return False, "tiny_header_footer"
+
+            # Drop tiny sparse blocks anywhere on the page (common false-positive: title blocks / page furniture).
+            if hr < 0.05 and ar < 0.05 and empty_ratio > 0.55 and digit_ratio < 0.50:
+                return False, "tiny_sparse_block"
+
+        # PyMuPDF "lines/lines" can sometimes interpret multi-column prose as tables.
+        # A strong signal for that failure mode is a consistently-narrow bbox (~one text column)
+        # coupled with high sparsity and low numeric density.
+        if tool == "pymupdf" and bbox_meta and mode == "pymupdf/lines/lines":
+            wr = float(bbox_meta.get("width_ratio", 1.0) or 1.0)
+            if wr < 0.75:
+                # In multi-column PDFs, PyMuPDF often finds "tables" confined to a single text column.
+                # Treat these as false positives unless they are strongly table-like.
+                if not (digit_ratio >= 0.60 and empty_ratio <= 0.60 and r >= 4 and c >= 3):
+                    return False, "narrow_pymupdf_column"
+
+        # Guard against multi-column prose being mis-detected as a table.
+        if "text" in (mode or ""):
+            if not bbox_meta:
+                return False, "missing_bbox"
+            ar = float(bbox_meta.get("area_ratio", 1.0) or 1.0)
+            wr = float(bbox_meta.get("width_ratio", 1.0) or 1.0)
+            hr = float(bbox_meta.get("height_ratio", 1.0) or 1.0)
+
+            # Heuristic defaults:
+            # - text-strategy tables should not be near-full-page
+            # - allow large tables only if they look numeric (digit_ratio)
+            # - should generally be wide (exclude single-column blocks)
+            if (ar > 0.60 or hr > 0.60) and digit_ratio < 0.25:
+                return False, "page_like_text_table"
+
+            # Extra guard: huge, sparse text-grids are almost always prose.
+            if hr > 0.85 and empty_ratio > 0.55 and digit_ratio < 0.35:
+                return False, "page_like_sparse_text_table"
+
+            if wr < 0.75:
+                return False, "narrow_text_table"
+
+        # Universal hard stop: near-full-page table is almost always a false positive.
+        if bbox_meta:
+            ar = float(bbox_meta.get("area_ratio", 0.0) or 0.0)
+            hr = float(bbox_meta.get("height_ratio", 0.0) or 0.0)
+            if ar > 0.92 and hr > 0.85:
+                return False, "near_full_page"
+
+        return True, "ok"
+
+    def add_table(
+        *,
+        tool: str,
+        page: int,
+        rows: List[List[str]],
+        meta: Dict[str, Any],
+        bbox_meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        # Normalize rows to strings
+        rows2 = []
+        for row in rows:
+            rr = []
+            for c in row:
+                if c is None:
+                    rr.append("")
+                else:
+                    s = str(c)
+                    rr.append("" if s.strip() == "None" else s)
+            rows2.append(rr)
+
+        stats = table_stats(rows2)
+        mode = str(meta.get("mode", ""))
+        ok, reason = should_accept(stats=stats, bbox_meta=bbox_meta, mode=mode, tool=tool)
+        if not ok:
+            return
+
+        sig = table_signature(rows2)
+        if sig in seen:
+            return
+
+        md_table = rows_to_markdown_table(rows2)
+        if not md_table:
+            return
+
+        seen.add(sig)
+
+        idx = len(audit) + 1
+        out_md.append(f"## Table {idx} (page {page})")
+        out_md.append("")
+        out_md.extend(md_table)
+        out_md.append("")
+
+        audit.append(
+            {
+                "index": idx,
+                "page": page,
+                "tool": tool,
+                "mode": mode,
+                "sha1": sig,
+                **stats,
+                **(bbox_meta or {}),
+                **meta,
+            }
+        )
+
+    # ---------------------------------------------------------------------
+    # 1) PyMuPDF table finder (primary)
+    # ---------------------------------------------------------------------
+    try:
+        import fitz  # PyMuPDF
+
+        doc = fitz.open(str(pdf_path))
+        n_pages = doc.page_count
+        if max_pages and max_pages > 0:
+            n_pages = min(n_pages, max_pages)
+
+        combos: List[Tuple[str, str]] = [("lines", "lines")]
+        if lenient:
+            combos.extend(
+                [
+                    ("lines", "text"),
+                    ("text", "lines"),
+                    ("text", "text"),
+                ]
+            )
+
+        for pno in range(n_pages):
+            page = doc.load_page(pno)
+            page_w = float(page.rect.width)
+            page_h = float(page.rect.height)
+
+            for v, h in combos:
+                mode = f"pymupdf/{v}/{h}"
+                try:
+                    res = page.find_tables(vertical_strategy=v, horizontal_strategy=h)
+                except Exception:
+                    continue
+
+                for t in getattr(res, "tables", []) or []:
+                    try:
+                        rows = t.extract()
+                    except Exception:
+                        continue
+
+                    bm = None
+                    try:
+                        # bbox is (x0, y0, x1, y1)
+                        bm = bbox_stats(bbox=tuple(map(float, t.bbox)), page_w=page_w, page_h=page_h)
+                    except Exception:
+                        bm = None
+
+                    add_table(
+                        tool="pymupdf",
+                        page=pno + 1,
+                        rows=rows,
+                        meta={"mode": mode},
+                        bbox_meta=bm,
+                    )
+
+        if audit:
+            return audit, out_md
+
+    except Exception:
+        pass
+
+    # ---------------------------------------------------------------------
+    # 2) Camelot (optional)
+    # ---------------------------------------------------------------------
+    try:
+        import camelot  # type: ignore
+
+        flavors = ["lattice", "stream"]
+        pages_opt = "all"
+        if max_pages and max_pages > 0:
+            pages_opt = "1-{}".format(max_pages)
+
+        for flavor in flavors:
+            tables = camelot.read_pdf(str(pdf_path), pages=pages_opt, flavor=flavor)
+            if getattr(tables, "n", 0) == 0:
+                continue
+
+            for t in tables:
+                page = int(getattr(t, "page", 0) or 0)
+                try:
+                    df = t.df
+                    rows = df.values.tolist()
+                except Exception:
+                    continue
+
+                add_table(
+                    tool="camelot",
+                    page=page or 0,
+                    rows=rows,
+                    meta={"flavor": flavor, "mode": f"camelot/{flavor}"},
+                )
+
+            if audit:
+                return audit, out_md
+
+    except Exception:
+        pass
+
+    # ---------------------------------------------------------------------
+    # 3) pdfplumber fallback
+    # ---------------------------------------------------------------------
+    try:
+        import pdfplumber  # type: ignore
+
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            n_pages = len(pdf.pages)
+            if max_pages and max_pages > 0:
+                n_pages = min(n_pages, max_pages)
+
+            settings_list: List[Dict[str, Any]] = [
+                {"vertical_strategy": "lines", "horizontal_strategy": "lines"},
+            ]
+            if lenient:
+                settings_list.extend(
+                    [
+                        {"vertical_strategy": "lines", "horizontal_strategy": "text"},
+                        {"vertical_strategy": "text", "horizontal_strategy": "lines"},
+                        {"vertical_strategy": "text", "horizontal_strategy": "text"},
+                    ]
+                )
+
+            for i in range(n_pages):
+                page = pdf.pages[i]
+                page_w = float(page.width)
+                page_h = float(page.height)
+
+                for settings in settings_list:
+                    v = str(settings.get("vertical_strategy", ""))
+                    h = str(settings.get("horizontal_strategy", ""))
+                    mode = f"pdfplumber/{v}/{h}"
+
+                    try:
+                        found = page.find_tables(table_settings=settings)
+                    except Exception:
+                        continue
+
+                    for t in found or []:
+                        try:
+                            rows = t.extract()
+                        except Exception:
+                            continue
+
+                        bm = None
+                        try:
+                            bm = bbox_stats(bbox=tuple(map(float, t.bbox)), page_w=page_w, page_h=page_h)
+                        except Exception:
+                            bm = None
+
+                        add_table(
+                            tool="pdfplumber",
+                            page=i + 1,
+                            rows=rows,
+                            meta={"settings": settings, "mode": mode},
+                            bbox_meta=bm,
+                        )
+
+    except Exception as e:
+        _eprint(f"WARNING: table extraction unavailable ({e}); skipping tables")
+
+    return audit, out_md
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    ap = argparse.ArgumentParser(prog="tito-pdf")
+    ap.add_argument("input_pdf", help="Path to a PDF file")
+    ap.add_argument("--id", dest="run_id", default="", help="Stable ID for outputs (default: derived from filename)")
+    ap.add_argument("--out-dir", default=".", help="Output root directory (default: .)")
+
+    ap.add_argument(
+        "--mode",
+        choices=["fast", "robust", "best"],
+        default="robust",
+        help=(
+            "High-level mode (default: robust). "
+            "fast disables OCR. best forces OCR and retries tables with lenient detection if strict finds none."
+        ),
+    )
+
+    # Integration/contract outputs (intended for orchestration by other tools).
+    # If any of these are set, tito-pdf will write to the explicit paths and avoid
+    # creating ./md and ./sessions subfolders.
+    ap.add_argument("--raw-text-out", default="", help="Write extracted plaintext (UTF-8) to PATH")
+    ap.add_argument("--tables-out", default="", help="Write extracted tables markdown to PATH")
+    ap.add_argument("--tables-audit-out", default="", help="Write tables audit JSON to PATH")
+    ap.add_argument("--assets-json", default="", help="Write assets/metrics JSON to PATH")
+
+    ap.add_argument("--text", action="store_true", help="Export text markdown")
+    ap.add_argument("--tables", action="store_true", help="Export tables markdown")
+    ap.add_argument("--tables-lenient", action="store_true",
+                    help="Enable text-based table detection (more tables, more false positives)")
+    ap.add_argument("--all", action="store_true", help="Export both text and tables (default if no mode flags)")
+
+    ap.add_argument("--no-ocr", action="store_true", help="Disable OCR stage")
+    ap.add_argument("--force-ocr", action="store_true", help="Force OCR even if PDF already has text")
+
+    ap.add_argument("--max-pages", type=int, default=0, help="Limit pages processed (debug)")
+    args = ap.parse_args(argv)
+
+    input_pdf = Path(args.input_pdf).expanduser().resolve()
+    if not input_pdf.is_file():
+        _eprint(f"ERROR: input PDF not found: {input_pdf}")
+        return 2
+
+    def _opt_path(v: str) -> Optional[Path]:
+        vv = (v or "").strip()
+        if not vv:
+            return None
+        return Path(vv).expanduser().resolve()
+
+    raw_text_out = _opt_path(getattr(args, "raw_text_out", ""))
+    tables_out = _opt_path(getattr(args, "tables_out", ""))
+    tables_audit_out = _opt_path(getattr(args, "tables_audit_out", ""))
+    assets_json_out = _opt_path(getattr(args, "assets_json", ""))
+
+    contract_mode = any([raw_text_out, tables_out, tables_audit_out, assets_json_out])
+
+    run_id = _slugify_id(args.run_id or input_pdf.name)
+
+    # Default mode: --all
+    do_text = bool(args.text)
+    do_tables = bool(args.tables)
+    if args.all or (not do_text and not do_tables):
+        do_text = True
+        do_tables = True
+
+    # In contract mode, what we generate is driven by explicit output paths.
+    if contract_mode:
+        do_text = raw_text_out is not None
+        do_tables = tables_out is not None or tables_audit_out is not None
+        if do_tables and tables_out is None:
+            _eprint("ERROR: --tables-audit-out requires --tables-out")
+            return 2
+        if not do_text and not do_tables:
+            _eprint("ERROR: contract mode requires --raw-text-out and/or --tables-out")
+            return 2
+
+    # Resolve high-level mode into effective knobs (explicit flags still win).
+    mode = str(getattr(args, "mode", "robust") or "robust")
+    explicit_no_ocr = bool(args.no_ocr)
+    explicit_force_ocr = bool(args.force_ocr)
+    explicit_tables_lenient = bool(args.tables_lenient)
+
+    no_ocr = bool(args.no_ocr)
+    force_ocr = bool(args.force_ocr)
+    tables_lenient = bool(args.tables_lenient)
+    tables_auto_fallback = False
+
+    if mode == "fast":
+        if not explicit_no_ocr and not explicit_force_ocr:
+            no_ocr = True
+    elif mode == "best":
+        if not explicit_no_ocr and not explicit_force_ocr:
+            force_ocr = True
+        if not explicit_tables_lenient:
+            tables_auto_fallback = True
+
+    if no_ocr and force_ocr:
+        _eprint("WARNING: both --no-ocr and --force-ocr were set; using --no-ocr")
+        force_ocr = False
+
+    # Output layout
+    if contract_mode:
+        paths = [p for p in [raw_text_out, tables_out, tables_audit_out, assets_json_out] if p is not None]
+        work_dir = paths[0].parent
+        for p in paths[1:]:
+            if p.parent != work_dir:
+                _eprint("ERROR: contract outputs must share the same parent directory")
+                return 2
+        out_dir = work_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Fill defaults for optional companion outputs
+        if do_tables and tables_audit_out is None:
+            tables_audit_out = out_dir / f"{run_id}.retrieve.tables.audit.json"
+        if assets_json_out is None:
+            assets_json_out = out_dir / f"{run_id}.retrieve.pdf.assets.json"
+
+        md_dir = out_dir
+        session_dir = out_dir
+    else:
+        out_dir = Path(args.out_dir).expanduser().resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        sessions_dir = out_dir / "sessions"
+        md_dir = out_dir / "md"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        md_dir.mkdir(parents=True, exist_ok=True)
+
+        session_dir = sessions_dir / _ts_run_id()
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+    # Stage 0: copy + prepare
+    orig_pdf = session_dir / f"{run_id}.input.pdf"
+    shutil.copy2(input_pdf, orig_pdf)
+
+    prepared_pdf = session_dir / f"{run_id}.prepared.pdf"
+
+    # IMPORTANT:
+    # - If OCR is enabled, do NOT strip images before OCR.
+    # - If OCR is disabled, stripping images is a useful size/perf optimization.
+    prepare_pdf(input_pdf=orig_pdf, output_pdf=prepared_pdf, strip_images=bool(no_ocr))
+
+    # Stage 0b: OCR
+    ocr_out_pdf = session_dir / f"{run_id}.ocr.pdf"
+    ocr_ran = False
+    if no_ocr:
+        shutil.copy2(prepared_pdf, ocr_out_pdf)
+    else:
+        ocr_ran = ocr_pdf(input_pdf=prepared_pdf, output_pdf=ocr_out_pdf, force=bool(force_ocr))
+
+    pdf_for_extract = ocr_out_pdf
+
+    raw_text_bytes: int = 0
+    raw_text_lines: int = 0
+
+    # Stage: text
+    if do_text:
+        lines = extract_lines_layout(pdf_for_extract, max_pages=int(args.max_pages or 0))
+        lines = drop_repeated_headers_footers(lines)
+
+        if contract_mode and raw_text_out is not None:
+            txt = lines_to_text(lines)
+            raw_text_bytes = len(txt.encode("utf-8", errors="replace"))
+            raw_text_lines = txt.count("\n")
+            raw_text_out.parent.mkdir(parents=True, exist_ok=True)
+            raw_text_out.write_text(txt, encoding="utf-8")
+            _eprint(f"Wrote: {raw_text_out}")
+        elif not contract_mode:
+            md_text = lines_to_markdown(lines)
+            out_text_path = md_dir / f"{run_id}.retrieve.md"
+            out_text_path.write_text(md_text, encoding="utf-8")
+            _eprint(f"Wrote: {out_text_path}")
+
+    # Stage: tables
+    if do_tables:
+        audit, table_md = extract_tables(
+            pdf_for_extract,
+            max_pages=int(args.max_pages or 0),
+            lenient=bool(tables_lenient),
+        )
+        if not audit and tables_auto_fallback:
+            audit, table_md = extract_tables(
+                pdf_for_extract,
+                max_pages=int(args.max_pages or 0),
+                lenient=True,
+            )
+
+        out_tables_path = tables_out if (contract_mode and tables_out is not None) else (md_dir / f"{run_id}.retrieve.tables.md")
+        if not table_md:
+            out_tables_path.parent.mkdir(parents=True, exist_ok=True)
+            out_tables_path.write_text("(No tables detected.)\n", encoding="utf-8")
+        else:
+            header = [
+                f"# Tables extracted from {input_pdf.name}",
+                "",
+                "This file is generated by tito-pdf (deterministic, no LLM).",
+                "",
+            ]
+            out_tables_path.parent.mkdir(parents=True, exist_ok=True)
+            out_tables_path.write_text("\n".join(header + table_md).rstrip("\n") + "\n", encoding="utf-8")
+
+        audit_path = tables_audit_out if (contract_mode and tables_audit_out is not None) else (session_dir / f"{run_id}.retrieve.tables.audit.json")
+        payload = {
+            "input_pdf": str(input_pdf),
+            "prepared_pdf": str(prepared_pdf),
+            "ocr_pdf": str(ocr_out_pdf),
+            "ocr_ran": bool(ocr_ran),
+            "mode": str(mode),
+            "tables": audit,
+        }
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+        _eprint(f"Wrote: {out_tables_path}")
+        _eprint(f"Wrote: {audit_path}")
+
+    # Assets/metrics JSON (optional)
+    if assets_json_out is not None:
+        payload = {
+            "mode": str(mode),
+            "input_pdf": str(input_pdf),
+            "prepared_pdf": str(prepared_pdf),
+            "ocr_pdf": str(ocr_out_pdf),
+            "ocr_ran": bool(ocr_ran),
+        }
+        if raw_text_out is not None:
+            payload["raw_text_out"] = str(raw_text_out)
+            payload["raw_text_bytes"] = int(raw_text_bytes)
+            payload["raw_text_lines"] = int(raw_text_lines)
+        if tables_out is not None:
+            payload["tables_out"] = str(tables_out)
+        if tables_audit_out is not None:
+            payload["tables_audit_out"] = str(tables_audit_out)
+
+        assets_json_out.parent.mkdir(parents=True, exist_ok=True)
+        assets_json_out.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        _eprint(f"Wrote: {assets_json_out}")
+
+    # Minimal summary for calling shells
+    _eprint("OK")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,34 @@
+{
+  "input_pdf": "/Users/averrik/Cloud/github/tito/tests/smoke/fixtures/605368_Longonjo TSF_PSHA_Seismotectonic Review_Draft Letter Report_20251031.pdf",
+  "prepared_pdf": "/Users/averrik/Cloud/github/garage/pdf/sessions/run-20260129_125917/longonjo_tables_lenient_v2.prepared.pdf",
+  "ocr_pdf": "/Users/averrik/Cloud/github/garage/pdf/sessions/run-20260129_125917/longonjo_tables_lenient_v2.ocr.pdf",
+  "ocr_ran": false,
+  "tables": [
+    {
+      "index": 1,
+      "page": 5,
+      "tool": "pdfplumber",
+      "mode": "pdfplumber/lines/text",
+      "sha1": "4d3d54294db2862039eb6b16d191322e1fba0067",
+      "rows": 6,
+      "cols": 3,
+      "cells_total": 18,
+      "cells_nonempty": 5,
+      "empty_ratio": 0.7222,
+      "digit_ratio": 0.2,
+      "bbox": [
+        56.825,
+        492.25,
+        538.679,
+        522.745
+      ],
+      "width_ratio": 0.8095,
+      "height_ratio": 0.0362,
+      "area_ratio": 0.0293,
+      "settings": {
+        "vertical_strategy": "lines",
+        "horizontal_strategy": "text"
+      }
+    }
+  ]
+}
