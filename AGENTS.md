@@ -4,7 +4,7 @@ This file teaches an agent (Claude) how to use the standalone `tito-pdf` helper 
 If you are a human user, see `README.md` for the short version.
 
 What this tool does
-- Input: a PDF file path.
+- Input: a PDF or DOCX file path.
 
 Default outputs (under `--out-dir`, default `.`):
 - `md/<id>.retrieve.md` (best-effort Markdown with headings)
@@ -26,7 +26,7 @@ Constraints
 - Table extraction is heuristic; expect occasional false positives/negatives.
 
 Setup (one-time)
-From `~/github/garage/pdf`:
+From the repo root:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
