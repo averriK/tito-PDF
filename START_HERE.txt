@@ -39,13 +39,12 @@ DONE (2026-02-04)
 
 VERIFIED (2026-02-04)
 - install/manifest.json validation: ./install/validate_manifest.sh
-
-PENDING VERIFICATION (as of 2026-02-04)
-- Reinstall and verify the installed help output (GNU-style; must show `--md-out PATH`, must not show `--id`; must support `--version`):
+- Reinstall used for verification:
   - sudo ./install/install.sh
+- Installed help contract (GNU-style; must show `--md-out PATH`, must not show `--id`; must support `--version`):
   - tito-pdf --help
   - tito-pdf --version
-- Run the installed-binary smoke test:
+- Installed-binary smoke test:
   - ./tests/smoke/tito_pdf_smoke.sh
 
 PENDING (as of 2026-02-04)
