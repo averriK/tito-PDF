@@ -1,7 +1,8 @@
 #!/bin/bash
-# Deterministic smoke test for tito-pdf (PDF + DOCX).
+# Deterministic smoke test for *installed* tito-pdf (PDF + DOCX).
 #
-# Runs in an ephemeral venv to ensure Python deps are available.
+# Policy: validate the PATH-installed `tito-pdf` binary, not the repo script.
+# The ephemeral venv below is only used to generate a tiny DOCX input (python-docx).
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,25 +13,25 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v tito-pdf >/dev/null 2>&1; then
+  echo "ERROR: tito-pdf not found on PATH." >&2
+  echo "Install it first (system-wide):" >&2
+  echo "  sudo $ROOT_DIR/install/install.sh" >&2
+  exit 1
+fi
+
 TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t tito_pdf_smoke)"
 cleanup() {
   rm -rf "$TMP_DIR" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-VENV_DIR="$TMP_DIR/venv"
-python3 -m venv "$VENV_DIR"
-
-# Install deps (quiet-ish but still shows pip progress on errors)
-"$VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel >/dev/null
-"$VENV_DIR/bin/pip" install -r "$ROOT_DIR/requirements.txt" >/dev/null
-
 OUT_DIR="$TMP_DIR/out"
 mkdir -p "$OUT_DIR"
 # Create a tiny, valid PDF with selectable text.
 PDF_PATH="$TMP_DIR/hello.pdf"
 export PDF_PATH
-"$VENV_DIR/bin/python" - <<'PY'
+python3 - <<'PY'
 import os
 import pathlib
 
@@ -75,18 +76,41 @@ def write_minimal_pdf(path: str) -> None:
 
 write_minimal_pdf(os.environ["PDF_PATH"])
 PY
-# Run PDF extraction in contract mode.
-"$VENV_DIR/bin/python" "$ROOT_DIR/tito-pdf" "$PDF_PATH" \
+# Ensure the installed CLI contract is visible and does not promote legacy TITO semantics.
+if tito-pdf --help 2>&1 | grep -q -- "--id"; then
+  echo "ERROR: tito-pdf --help should not show --id" >&2
+  exit 1
+fi
+
+# Run PDF extraction with explicit output paths (fast = no OCR).
+tito-pdf "$PDF_PATH" \
   --mode fast \
+  --md-out "$OUT_DIR/pdf.md" \
   --raw-text-out "$OUT_DIR/pdf.raw.txt" \
   --tables-out "$OUT_DIR/pdf.tables.md" \
   --tables-audit-out "$OUT_DIR/pdf.tables.audit.json" \
   --assets-json "$OUT_DIR/pdf.assets.json" \
   >/dev/null
 
+grep -q "Hello PDF" "$OUT_DIR/pdf.md"
 grep -q "Hello PDF" "$OUT_DIR/pdf.raw.txt"
 
-# Create a tiny DOCX.
+# Convenience mode: write next to input (or under --out-dir) without explicit outputs.
+CONV_DIR="$OUT_DIR/convenience"
+mkdir -p "$CONV_DIR"
+tito-pdf "$PDF_PATH" --mode fast --out-dir "$CONV_DIR" >/dev/null
+
+test -s "$CONV_DIR/hello.md"
+grep -q "Hello PDF" "$CONV_DIR/hello.md"
+
+# Create a tiny DOCX (needs python-docx).
+VENV_DIR="$TMP_DIR/venv"
+python3 -m venv "$VENV_DIR"
+
+echo "+ Installing python-docx into ephemeral venv..."
+"$VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
+"$VENV_DIR/bin/pip" install python-docx
+
 DOCX_PATH="$TMP_DIR/hello.docx"
 export DOCX_PATH
 "$VENV_DIR/bin/python" - <<'PY'
@@ -106,24 +130,26 @@ table.cell(1, 1).text = "2"
 doc.save(os.environ["DOCX_PATH"])
 PY
 
-# Run DOCX extraction in contract mode.
-"$VENV_DIR/bin/python" "$ROOT_DIR/tito-pdf" "$DOCX_PATH" \
+# Run DOCX extraction with explicit output paths.
+tito-pdf "$DOCX_PATH" \
   --mode fast \
+  --md-out "$OUT_DIR/docx.md" \
   --raw-text-out "$OUT_DIR/docx.raw.txt" \
   --tables-out "$OUT_DIR/docx.tables.md" \
   --tables-audit-out "$OUT_DIR/docx.tables.audit.json" \
   --assets-json "$OUT_DIR/docx.assets.json" \
   >/dev/null
 
+grep -q "Hello DOCX" "$OUT_DIR/docx.md"
 grep -q "Hello DOCX" "$OUT_DIR/docx.raw.txt"
 grep -Fq "| A | B |" "$OUT_DIR/docx.tables.md"
 
 test -s "$OUT_DIR/pdf.assets.json"
 test -s "$OUT_DIR/docx.assets.json"
 
-# Validate a few required run-report keys.
+# Validate a few required assets-json keys.
 export OUT_DIR
-"$VENV_DIR/bin/python" - <<'PY'
+python3 - <<'PY'
 import json
 import os
 import pathlib

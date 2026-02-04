@@ -1,0 +1,77 @@
+START_HERE.txt (tito-pdf)
+Last updated: 2026-02-04
+Branch: main
+
+ONLY sources of truth (in this order)
+1) START_HERE.txt (this file): operational runbook + status + exact revalidation commands
+2) Warp Drive canonical plan: fceddb23-1baa-429d-97ab-67477590c565
+3) tito-pdf --help (installed CLI contract)
+4) tito-pdf (source code)
+5) MASTER_PLAN.txt (local snapshot of the Warp plan)
+6) AGENTS.md (stable repo orientation; NOT a run log)
+
+Canonical Warp plan_id: fceddb23-1baa-429d-97ab-67477590c565
+
+Quick sanity: "tito" vs "tito-pdf"
+- If `tito --help` shows confusing defaults that look like env vars: that's NOT this repo.
+- This repo/tool is `tito-pdf` (installed binary):
+  - command -v tito-pdf
+  - tito-pdf --help
+
+Stress-proof recovery drill (run from repo root)
+1) git --no-pager status
+2) ls -la
+3) sudo ./install/install.sh   # required after code changes (tests must use installed binary)
+4) command -v tito-pdf
+5) tito-pdf --help
+6) ./tests/smoke/tito_pdf_smoke.sh
+
+Status (DONE / VERIFIED / PENDING)
+DONE (2026-02-04)
+- Created canonical Warp plan (plan_id above)
+- Updated AGENTS.md (stable orientation + no-regress + jump points)
+- Created START_HERE.txt and MASTER_PLAN.txt
+- Fixed installer launcher heredoc to preserve "$@" at runtime (install/install.sh)
+- Updated `tito-pdf` CLI contract (source): adds `--md-out`, hides/deprecates `--id`, and makes explicit output paths write only to the requested paths (no `md/` or `sessions/`).
+- Updated smoke test to validate the installed `tito-pdf` binary, assert `--id` is hidden in help, and cover `--md-out` + convenience mode.
+
+VERIFIED (2026-02-04)
+- install/manifest.json validation: ./install/validate_manifest.sh
+- Installed help contract (must show `--md-out`, must not show `--id`):
+  - tito-pdf --help
+- Installed-binary smoke test (covers `--md-out` + explicit outputs + convenience mode):
+  - ./tests/smoke/tito_pdf_smoke.sh
+
+PENDING (as of 2026-02-04)
+- Decide whether to add deeper tests (unit tests for output-path resolution / assets JSON schema).
+
+Minimal validations (2–6 commands)
+1) sudo ./install/install.sh
+   - Required after code changes (validation is against installed binary).
+2) command -v tito-pdf
+   - Confirms which binary you will execute.
+3) tito-pdf --help
+   - Validates installed CLI help and documented defaults.
+4) ./tests/smoke/tito_pdf_smoke.sh
+   - End-to-end smoke against installed binary (PDF + DOCX): explicit outputs + convenience mode + assets JSON contract.
+5) ./install/validate_manifest.sh
+   - Validates install/manifest.json structure (requires jq).
+
+Next steps (concrete)
+- If a user reports confusing help/defaults, confirm which binaries are in play:
+  command -v tito
+  command -v tito-pdf
+  tito-pdf --help
+
+- If smoke test needs to be used as a “cheap” validator:
+  ./tests/smoke/tito_pdf_smoke.sh
+  Note: it creates a temporary venv and installs python-docx to generate the DOCX input.
+
+- If docs drift:
+  - Treat `tito-pdf --help` (installed) as the contract, then update README.md + SKILL_TITO_PDF.md + AGENTS.md.
+
+References
+- AGENTS.md
+- MASTER_PLAN.txt
+- README.md
+- SKILL_TITO_PDF.md

@@ -4,14 +4,16 @@
 Deterministic, local-only PDF/DOCX -> Markdown helper inspired by TITO's `retrieve`
 pipeline, but WITHOUT LLM/claude-flow.
 
-Outputs (TITO-like naming):
-- md/<id>.retrieve.md
-- md/<id>.retrieve.tables.md (separate tables file)
-- sessions/run-YYYYMMDD_HHMMSS/... (artifacts + audit json)
-
 Supported inputs:
 - .pdf
 - .docx
+
+Outputs:
+- Primary Markdown: --md-out PATH (recommended) or convenience mode writes <stem>.md
+  next to the input file (or under --out-dir).
+- Tables Markdown (optional): --tables-out PATH or convenience mode writes <stem>.tables.md
+- Plaintext (optional): --raw-text-out PATH
+- Assets/metrics JSON (optional): --assets-json PATH
 
 Notes:
 - OCR is performed via `ocrmypdf` when available (requires tesseract).
@@ -28,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -1016,7 +1019,7 @@ def extract_docx_markdown(docx_path: Path) -> str:
 
 
 def extract_docx_text(docx_path: Path) -> str:
-    # Plaintext companion used for contract mode (--raw-text-out).
+    # Plaintext companion used for explicit output paths (--raw-text-out).
     try:
         from docx import Document  # type: ignore
     except Exception as e:
@@ -1099,10 +1102,30 @@ def extract_docx_tables(docx_path: Path) -> Tuple[List[Dict[str, Any]], List[str
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    ap = argparse.ArgumentParser(prog="tito-pdf")
+    ap = argparse.ArgumentParser(
+        prog="tito-pdf",
+        description=(
+            "Deterministic, local-only PDF/DOCX -> Markdown (+ optional tables).\n"
+            "Defaults are built-in (no environment variables are used)."
+        ),
+        epilog=(
+            "Recommended (standalone) usage:\n"
+            "  tito-pdf INPUT --md-out /tmp/out.md\n"
+            "\n"
+            "Explicit output paths (do not require --out-dir):\n"
+            "  --md-out PATH\n"
+            "  --raw-text-out PATH\n"
+            "  --tables-out PATH [--tables-audit-out PATH]\n"
+            "  --assets-json PATH\n"
+            "\n"
+            "Convenience mode (no explicit output paths):\n"
+            "  - Outputs are written next to the input file by default.\n"
+            "  - Use --out-dir DIR to write into a different directory.\n"
+            "  - If no --text/--tables/--all flags are provided, defaults to --text only.\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("input_path", help="Path to a PDF or DOCX file")
-    ap.add_argument("--id", dest="run_id", default="", help="Stable ID for outputs (default: derived from filename)")
-    ap.add_argument("--out-dir", default=".", help="Output root directory (default: .)")
 
     ap.add_argument(
         "--mode",
@@ -1114,25 +1137,54 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
     )
 
-    # Integration/contract outputs (intended for orchestration by other tools).
-    # If any of these are set, tito-pdf will write to the explicit paths and avoid
-    # creating ./md and ./sessions subfolders.
-    ap.add_argument("--raw-text-out", default="", help="Write extracted plaintext (UTF-8) to PATH")
-    ap.add_argument("--tables-out", default="", help="Write extracted tables markdown to PATH")
-    ap.add_argument("--tables-audit-out", default="", help="Write tables audit JSON to PATH")
-    ap.add_argument("--assets-json", default="", help="Write assets/metrics JSON to PATH")
+    # Primary output (recommended)
+    ap.add_argument("--md-out", default="", metavar="PATH", help="Write primary Markdown output to PATH")
 
-    ap.add_argument("--text", action="store_true", help="Export text markdown")
-    ap.add_argument("--tables", action="store_true", help="Export tables markdown")
-    ap.add_argument("--tables-lenient", action="store_true",
-                    help="Enable text-based table detection (more tables, more false positives)")
-    ap.add_argument("--all", action="store_true", help="Export both text and tables (default if no mode flags)")
+    # Convenience output directory (only used when no explicit output paths are set)
+    ap.add_argument(
+        "--out-dir",
+        default="",
+        metavar="DIR",
+        help="Convenience output directory (default: next to input). Ignored when any explicit output path is set.",
+    )
+
+    # Legacy/transitional: accept --id but do not promote it.
+    ap.add_argument("--id", dest="legacy_id", default="", help=argparse.SUPPRESS)
+
+    # Explicit outputs (paths)
+    ap.add_argument("--raw-text-out", default="", metavar="PATH", help="Write extracted plaintext (UTF-8) to PATH")
+    ap.add_argument("--tables-out", default="", metavar="PATH", help="Write extracted tables markdown to PATH")
+    ap.add_argument(
+        "--tables-audit-out",
+        default="",
+        metavar="PATH",
+        help="Write tables audit JSON to PATH (requires --tables-out)",
+    )
+    ap.add_argument("--assets-json", default="", metavar="PATH", help="Write assets/metrics JSON to PATH")
+
+    # Convenience toggles (only used when no explicit output paths are set)
+    ap.add_argument("--text", action="store_true", help="Convenience mode: write Markdown output")
+    ap.add_argument("--tables", action="store_true", help="Convenience mode: write tables markdown output")
+    ap.add_argument("--all", action="store_true", help="Convenience mode: write both Markdown and tables outputs")
+
+    ap.add_argument(
+        "--tables-lenient",
+        action="store_true",
+        help="Enable text-based table detection (more tables, more false positives)",
+    )
 
     ap.add_argument("--no-ocr", action="store_true", help="Disable OCR stage")
     ap.add_argument("--force-ocr", action="store_true", help="Force OCR even if PDF already has text")
-
-    ap.add_argument("--max-pages", type=int, default=0, help="Limit pages processed (debug)")
+    ap.add_argument("--max-pages", type=int, default=0, metavar="N", help="Limit pages processed (debug; 0 = all)")
     args = ap.parse_args(argv)
+
+    legacy_id = str(getattr(args, "legacy_id", "") or "").strip()
+    if legacy_id:
+        _eprint(
+            "WARNING: --id is deprecated and will be removed. "
+            "tito-pdf is a standalone single-document tool; "
+            "derive output names from the input filename or use --md-out for an explicit path."
+        )
 
     input_path = Path(args.input_path).expanduser().resolve()
     if not input_path.is_file():
@@ -1154,42 +1206,65 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return None
         return Path(vv).expanduser().resolve()
 
+    def _opt_dir(v: str) -> Optional[Path]:
+        vv = (v or "").strip()
+        if not vv:
+            return None
+        return Path(vv).expanduser().resolve()
+
+    md_out = _opt_path(getattr(args, "md_out", ""))
     raw_text_out = _opt_path(getattr(args, "raw_text_out", ""))
     tables_out = _opt_path(getattr(args, "tables_out", ""))
     tables_audit_out = _opt_path(getattr(args, "tables_audit_out", ""))
     assets_json_out = _opt_path(getattr(args, "assets_json", ""))
 
-    contract_mode = any([raw_text_out, tables_out, tables_audit_out, assets_json_out])
+    explicit_output_mode = any([md_out, raw_text_out, tables_out, tables_audit_out, assets_json_out])
 
-    run_id = _slugify_id(args.run_id or input_path.name)
+    # Determine what to generate + where to write it.
+    do_md = False
+    do_raw_text = False
+    do_tables = False
 
-    # Default mode: --all
-    do_text = bool(args.text)
-    do_tables = bool(args.tables)
-    if args.all or (not do_text and not do_tables):
-        do_text = True
-        do_tables = True
-
-    # In contract mode, what we generate is driven by explicit output paths.
-    if contract_mode:
-        do_text = raw_text_out is not None
+    if explicit_output_mode:
+        do_md = md_out is not None
+        do_raw_text = raw_text_out is not None
         do_tables = tables_out is not None or tables_audit_out is not None
-        if do_tables and tables_out is None:
+
+        if tables_audit_out is not None and tables_out is None:
             _eprint("ERROR: --tables-audit-out requires --tables-out")
             return 2
-        if not do_text and not do_tables:
-            _eprint("ERROR: contract mode requires --raw-text-out and/or --tables-out")
+
+        if not do_md and not do_raw_text and not do_tables:
+            _eprint("ERROR: no outputs requested. Use --md-out and/or --raw-text-out and/or --tables-out.")
             return 2
+
+    else:
+        # Convenience mode: write outputs next to input (or under --out-dir).
+        out_dir = _opt_dir(getattr(args, "out_dir", ""))
+        if out_dir is None:
+            out_dir = input_path.parent
+        else:
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+        do_tables = bool(getattr(args, "tables", False)) or bool(getattr(args, "all", False))
+        do_md = bool(getattr(args, "text", False)) or bool(getattr(args, "all", False))
+        if not do_md and not do_tables:
+            do_md = True  # default: markdown only
+
+        if do_md:
+            md_out = (out_dir / f"{input_path.stem}.md").resolve()
+        if do_tables:
+            tables_out = (out_dir / f"{input_path.stem}.tables.md").resolve()
 
     # Resolve high-level mode into effective knobs (explicit flags still win).
     mode = str(getattr(args, "mode", "robust") or "robust")
-    explicit_no_ocr = bool(args.no_ocr)
-    explicit_force_ocr = bool(args.force_ocr)
-    explicit_tables_lenient = bool(args.tables_lenient)
+    explicit_no_ocr = bool(getattr(args, "no_ocr", False))
+    explicit_force_ocr = bool(getattr(args, "force_ocr", False))
+    explicit_tables_lenient = bool(getattr(args, "tables_lenient", False))
 
-    no_ocr = bool(args.no_ocr)
-    force_ocr = bool(args.force_ocr)
-    tables_lenient = bool(args.tables_lenient)
+    no_ocr = bool(getattr(args, "no_ocr", False))
+    force_ocr = bool(getattr(args, "force_ocr", False))
+    tables_lenient = bool(getattr(args, "tables_lenient", False))
     tables_auto_fallback = False
 
     if mode == "fast":
@@ -1205,70 +1280,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _eprint("WARNING: both --no-ocr and --force-ocr were set; using --no-ocr")
         force_ocr = False
 
-    # Output layout
-    if contract_mode:
-        paths = [p for p in [raw_text_out, tables_out, tables_audit_out, assets_json_out] if p is not None]
-        work_dir = paths[0].parent
-        for p in paths[1:]:
-            if p.parent != work_dir:
-                _eprint("ERROR: contract outputs must share the same parent directory")
-                return 2
-        out_dir = work_dir
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        # Fill defaults for optional companion outputs
-        if do_tables and tables_audit_out is None:
-            tables_audit_out = out_dir / f"{run_id}.retrieve.tables.audit.json"
-        if assets_json_out is None:
-            assets_json_out = out_dir / f"{run_id}.retrieve.{input_kind}.assets.json"
-
-        md_dir = out_dir
-        session_dir = out_dir
-    else:
-        out_dir = Path(args.out_dir).expanduser().resolve()
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        sessions_dir = out_dir / "sessions"
-        md_dir = out_dir / "md"
-        sessions_dir.mkdir(parents=True, exist_ok=True)
-        md_dir.mkdir(parents=True, exist_ok=True)
-
-        session_dir = sessions_dir / _ts_run_id()
-        session_dir.mkdir(parents=True, exist_ok=True)
+    max_pages = int(getattr(args, "max_pages", 0) or 0)
 
     started_at_utc = _utc_now_iso()
     t0 = time.monotonic()
     stage_timings_ms: Dict[str, int] = {}
 
-    text_md_out: Optional[Path] = None
-    tables_md_out: Optional[Path] = None
+    text_md_written: Optional[Path] = None
+    raw_text_written: Optional[Path] = None
+    tables_md_written: Optional[Path] = None
     tables_audit_written: Optional[Path] = None
-    tables_count: int = 0
 
     raw_text_bytes: int = 0
     raw_text_lines: int = 0
+    tables_count: int = 0
+    ocr_ran: Optional[bool] = None
 
-    assets_payload: Dict[str, Any] = {
-        "schema_version": 1,
-        "tool": "tito-pdf",
-        "started_at_utc": started_at_utc,
-        "mode": str(mode),
-        "input_kind": str(input_kind),
-        "input_path": str(input_path),
-        "input_size_bytes": int(input_path.stat().st_size),
-        "out_dir": str(out_dir),
-        "md_dir": str(md_dir),
-        "session_dir": str(session_dir),
-    }
+    md_text: Optional[str] = None
+    raw_text: Optional[str] = None
+    tables_md_text: Optional[str] = None
+    tables_audit_payload: Optional[Dict[str, Any]] = None
 
-    # Only gather versions if we're going to write a report (this can call subprocess).
+    toolchain: Optional[Dict[str, Any]] = None
     if assets_json_out is not None:
         qpdf_path = _which("qpdf")
         gs_path = _which("gs") or _which("gswin64c") or _which("gswin32c")
         ocrmypdf_path = _which("ocrmypdf")
         tesseract_path = _which("tesseract")
 
-        assets_payload["toolchain"] = {
+        toolchain = {
             "python": {
                 "executable": sys.executable,
                 "version": sys.version.split()[0],
@@ -1289,197 +1329,188 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             },
         }
 
-    # Stage 0: copy + prepare
-    if input_kind == "pdf":
-        orig_pdf = session_dir / f"{run_id}.input.pdf"
-        shutil.copy2(input_path, orig_pdf)
+    def _write_text_atomic(path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
 
-        prepared_pdf = session_dir / f"{run_id}.prepared.pdf"
+    def _write_json_atomic(path: Path, obj: Any) -> None:
+        _write_text_atomic(path, json.dumps(obj, indent=2, ensure_ascii=False) + "\n")
 
-        # IMPORTANT:
-        # - If OCR is enabled, do NOT strip images before OCR.
-        # - If OCR is disabled, stripping images is a useful size/perf optimization.
-        t_stage = time.monotonic()
-        prepare_pdf(input_pdf=orig_pdf, output_pdf=prepared_pdf, strip_images=bool(no_ocr))
-        stage_timings_ms["prepare_pdf_ms"] = int((time.monotonic() - t_stage) * 1000)
+    with tempfile.TemporaryDirectory(prefix="tito-pdf-") as tmp_dir:
+        work_dir = Path(tmp_dir)
 
-        # Stage 0b: OCR
-        ocr_out_pdf = session_dir / f"{run_id}.ocr.pdf"
-        ocr_ran = False
-        if no_ocr:
-            shutil.copy2(prepared_pdf, ocr_out_pdf)
-        else:
+        if input_kind == "pdf":
+            prepared_pdf = work_dir / "prepared.pdf"
             t_stage = time.monotonic()
-            ocr_ran = ocr_pdf(input_pdf=prepared_pdf, output_pdf=ocr_out_pdf, force=bool(force_ocr))
-            stage_timings_ms["ocr_ms"] = int((time.monotonic() - t_stage) * 1000)
+            prepare_pdf(input_pdf=input_path, output_pdf=prepared_pdf, strip_images=bool(no_ocr))
+            stage_timings_ms["prepare_pdf_ms"] = int((time.monotonic() - t_stage) * 1000)
 
-        pdf_for_extract = ocr_out_pdf
+            ocr_out_pdf = work_dir / "ocr.pdf"
+            if no_ocr:
+                shutil.copy2(prepared_pdf, ocr_out_pdf)
+                ocr_ran = False
+            else:
+                t_stage = time.monotonic()
+                ocr_ran = ocr_pdf(input_pdf=prepared_pdf, output_pdf=ocr_out_pdf, force=bool(force_ocr))
+                stage_timings_ms["ocr_ms"] = int((time.monotonic() - t_stage) * 1000)
 
-        assets_payload.update({
-            "input_pdf": str(input_path),
-            "prepared_pdf": str(prepared_pdf),
-            "ocr_pdf": str(ocr_out_pdf),
-            "ocr_ran": bool(ocr_ran),
-        })
+            pdf_for_extract = ocr_out_pdf
 
-        # Stage: text
-        if do_text:
-            t_stage = time.monotonic()
-            lines = extract_lines_layout(pdf_for_extract, max_pages=int(args.max_pages or 0))
-            lines = drop_repeated_headers_footers(lines)
-            stage_timings_ms["extract_text_ms"] = int((time.monotonic() - t_stage) * 1000)
+            lines: Optional[List[PdfLine]] = None
+            if do_md or do_raw_text:
+                t_stage = time.monotonic()
+                lines = extract_lines_layout(pdf_for_extract, max_pages=max_pages)
+                lines = drop_repeated_headers_footers(lines)
+                stage_timings_ms["extract_text_ms"] = int((time.monotonic() - t_stage) * 1000)
 
-            if contract_mode and raw_text_out is not None:
-                txt = lines_to_text(lines)
-                raw_text_bytes = len(txt.encode("utf-8", errors="replace"))
-                raw_text_lines = txt.count("\n")
-                raw_text_out.parent.mkdir(parents=True, exist_ok=True)
-                raw_text_out.write_text(txt, encoding="utf-8")
-                _eprint(f"Wrote: {raw_text_out}")
-            elif not contract_mode:
+            if do_md and lines is not None:
                 md_text = lines_to_markdown(lines)
-                out_text_path = md_dir / f"{run_id}.retrieve.md"
-                out_text_path.write_text(md_text, encoding="utf-8")
-                text_md_out = out_text_path
-                _eprint(f"Wrote: {out_text_path}")
 
-        # Stage: tables
-        if do_tables:
-            t_stage = time.monotonic()
-            audit, table_md = extract_tables(
-                pdf_for_extract,
-                max_pages=int(args.max_pages or 0),
-                lenient=bool(tables_lenient),
-            )
-            if not audit and tables_auto_fallback:
+            if do_raw_text and lines is not None:
+                raw_text = lines_to_text(lines)
+                raw_text_bytes = len(raw_text.encode("utf-8", errors="replace"))
+                raw_text_lines = raw_text.count("\n")
+
+            if do_tables:
+                t_stage = time.monotonic()
                 audit, table_md = extract_tables(
                     pdf_for_extract,
-                    max_pages=int(args.max_pages or 0),
-                    lenient=True,
+                    max_pages=max_pages,
+                    lenient=bool(tables_lenient),
                 )
+                if not audit and tables_auto_fallback:
+                    audit, table_md = extract_tables(
+                        pdf_for_extract,
+                        max_pages=max_pages,
+                        lenient=True,
+                    )
 
-            stage_timings_ms["extract_tables_ms"] = int((time.monotonic() - t_stage) * 1000)
-            tables_count = int(len(audit))
+                stage_timings_ms["extract_tables_ms"] = int((time.monotonic() - t_stage) * 1000)
+                tables_count = int(len(audit))
 
-            out_tables_path = tables_out if (contract_mode and tables_out is not None) else (md_dir / f"{run_id}.retrieve.tables.md")
-            if not table_md:
-                out_tables_path.parent.mkdir(parents=True, exist_ok=True)
-                out_tables_path.write_text("(No tables detected.)\n", encoding="utf-8")
-            else:
-                header = [
-                    f"# Tables extracted from {input_path.name}",
-                    "",
-                    "This file is generated by tito-pdf (deterministic, no LLM).",
-                    "",
-                ]
-                out_tables_path.parent.mkdir(parents=True, exist_ok=True)
-                out_tables_path.write_text("\n".join(header + table_md).rstrip("\n") + "\n", encoding="utf-8")
+                if not table_md:
+                    tables_md_text = "(No tables detected.)\n"
+                else:
+                    header = [
+                        f"# Tables extracted from {input_path.name}",
+                        "",
+                        "This file is generated by tito-pdf (deterministic, no LLM).",
+                        "",
+                    ]
+                    tables_md_text = "\n".join(header + table_md).rstrip("\n") + "\n"
 
-            tables_md_out = out_tables_path
+                tables_audit_payload = {
+                    "input_kind": "pdf",
+                    "input_path": str(input_path),
+                    "mode": str(mode),
+                    "ocr_ran": bool(ocr_ran),
+                    "tables": audit,
+                }
 
-            audit_path = tables_audit_out if (contract_mode and tables_audit_out is not None) else (session_dir / f"{run_id}.retrieve.tables.audit.json")
-            payload = {
-                "input_kind": "pdf",
-                "input_pdf": str(input_path),
-                "prepared_pdf": str(prepared_pdf),
-                "ocr_pdf": str(ocr_out_pdf),
-                "ocr_ran": bool(ocr_ran),
-                "mode": str(mode),
-                "tables": audit,
-            }
-            audit_path.parent.mkdir(parents=True, exist_ok=True)
-            audit_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            tables_audit_written = audit_path
-
-            _eprint(f"Wrote: {out_tables_path}")
-            _eprint(f"Wrote: {audit_path}")
-
-    else:
-        # input_kind == "docx"
-        orig_docx = session_dir / f"{run_id}.input.docx"
-        shutil.copy2(input_path, orig_docx)
-
-        assets_payload.update({
-            "input_docx": str(input_path),
-        })
-
-        if do_text:
-            if contract_mode and raw_text_out is not None:
+        else:
+            # input_kind == "docx"
+            if do_md:
                 t_stage = time.monotonic()
-                txt = extract_docx_text(orig_docx)
+                md_text = extract_docx_markdown(input_path)
                 stage_timings_ms["extract_text_ms"] = int((time.monotonic() - t_stage) * 1000)
-                raw_text_bytes = len(txt.encode("utf-8", errors="replace"))
-                raw_text_lines = txt.count("\n")
-                raw_text_out.parent.mkdir(parents=True, exist_ok=True)
-                raw_text_out.write_text(txt, encoding="utf-8")
-                _eprint(f"Wrote: {raw_text_out}")
-            elif not contract_mode:
+
+            if do_raw_text:
                 t_stage = time.monotonic()
-                md_text = extract_docx_markdown(orig_docx)
+                raw_text = extract_docx_text(input_path)
                 stage_timings_ms["extract_text_ms"] = int((time.monotonic() - t_stage) * 1000)
-                out_text_path = md_dir / f"{run_id}.retrieve.md"
-                out_text_path.write_text(md_text, encoding="utf-8")
-                text_md_out = out_text_path
-                _eprint(f"Wrote: {out_text_path}")
+                raw_text_bytes = len(raw_text.encode("utf-8", errors="replace"))
+                raw_text_lines = raw_text.count("\n")
 
-        if do_tables:
-            t_stage = time.monotonic()
-            audit, table_md = extract_docx_tables(orig_docx)
-            stage_timings_ms["extract_tables_ms"] = int((time.monotonic() - t_stage) * 1000)
-            tables_count = int(len(audit))
+            if do_tables:
+                t_stage = time.monotonic()
+                audit, table_md = extract_docx_tables(input_path)
+                stage_timings_ms["extract_tables_ms"] = int((time.monotonic() - t_stage) * 1000)
+                tables_count = int(len(audit))
 
-            out_tables_path = tables_out if (contract_mode and tables_out is not None) else (md_dir / f"{run_id}.retrieve.tables.md")
-            if not table_md:
-                out_tables_path.parent.mkdir(parents=True, exist_ok=True)
-                out_tables_path.write_text("(No tables detected.)\n", encoding="utf-8")
-            else:
-                header = [
-                    f"# Tables extracted from {input_path.name}",
-                    "",
-                    "This file is generated by tito-pdf (deterministic, no LLM).",
-                    "",
-                ]
-                out_tables_path.parent.mkdir(parents=True, exist_ok=True)
-                out_tables_path.write_text("\n".join(header + table_md).rstrip("\n") + "\n", encoding="utf-8")
+                if not table_md:
+                    tables_md_text = "(No tables detected.)\n"
+                else:
+                    header = [
+                        f"# Tables extracted from {input_path.name}",
+                        "",
+                        "This file is generated by tito-pdf (deterministic, no LLM).",
+                        "",
+                    ]
+                    tables_md_text = "\n".join(header + table_md).rstrip("\n") + "\n"
 
-            tables_md_out = out_tables_path
+                tables_audit_payload = {
+                    "input_kind": "docx",
+                    "input_path": str(input_path),
+                    "mode": str(mode),
+                    "tables": audit,
+                }
 
-            audit_path = tables_audit_out if (contract_mode and tables_audit_out is not None) else (session_dir / f"{run_id}.retrieve.tables.audit.json")
-            payload = {
-                "input_kind": "docx",
-                "input_docx": str(input_path),
-                "mode": str(mode),
-                "tables": audit,
-            }
-            audit_path.parent.mkdir(parents=True, exist_ok=True)
-            audit_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            tables_audit_written = audit_path
+    # Write requested outputs (after extraction succeeded)
+    if md_out is not None:
+        if md_text is None:
+            _eprint("ERROR: failed to produce Markdown output")
+            return 1
+        _write_text_atomic(md_out, md_text)
+        text_md_written = md_out
+        _eprint(f"Wrote: {md_out}")
 
-            _eprint(f"Wrote: {out_tables_path}")
-            _eprint(f"Wrote: {audit_path}")
+    if raw_text_out is not None:
+        if raw_text is None:
+            _eprint("ERROR: failed to produce raw text output")
+            return 1
+        _write_text_atomic(raw_text_out, raw_text)
+        raw_text_written = raw_text_out
+        _eprint(f"Wrote: {raw_text_out}")
 
-    # Assets/metrics JSON (optional)
+    if tables_out is not None:
+        if tables_md_text is None:
+            _eprint("ERROR: failed to produce tables output")
+            return 1
+        _write_text_atomic(tables_out, tables_md_text)
+        tables_md_written = tables_out
+        _eprint(f"Wrote: {tables_out}")
+
+    if tables_audit_out is not None:
+        if tables_audit_payload is None:
+            _eprint("ERROR: failed to produce tables audit output")
+            return 1
+        _write_json_atomic(tables_audit_out, tables_audit_payload)
+        tables_audit_written = tables_audit_out
+        _eprint(f"Wrote: {tables_audit_out}")
+
     if assets_json_out is not None:
-        payload = dict(assets_payload)
-        payload["finished_at_utc"] = _utc_now_iso()
-        payload["duration_ms"] = int((time.monotonic() - t0) * 1000)
-        payload["timings_ms"] = dict(stage_timings_ms)
+        payload: Dict[str, Any] = {
+            "schema_version": 1,
+            "tool": "tito-pdf",
+            "started_at_utc": started_at_utc,
+            "finished_at_utc": _utc_now_iso(),
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+            "mode": str(mode),
+            "input_kind": str(input_kind),
+            "input_path": str(input_path),
+            "input_size_bytes": int(input_path.stat().st_size),
+            "timings_ms": dict(stage_timings_ms),
+            "metrics": {
+                "raw_text_bytes": int(raw_text_bytes),
+                "raw_text_lines": int(raw_text_lines),
+                "tables_count": int(tables_count),
+            },
+        }
 
         outputs: Dict[str, Any] = {}
-        if text_md_out is not None:
-            outputs["text_md"] = str(text_md_out)
-        if tables_md_out is not None:
-            outputs["tables_md"] = str(tables_md_out)
+        if text_md_written is not None:
+            outputs["text_md"] = str(text_md_written)
+            payload["md_out"] = str(text_md_written)
+        if raw_text_written is not None:
+            outputs["raw_text"] = str(raw_text_written)
+        if tables_md_written is not None:
+            outputs["tables_md"] = str(tables_md_written)
         if tables_audit_written is not None:
             outputs["tables_audit_json"] = str(tables_audit_written)
         if outputs:
             payload["outputs"] = outputs
-
-        payload["metrics"] = {
-            "raw_text_bytes": int(raw_text_bytes),
-            "raw_text_lines": int(raw_text_lines),
-            "tables_count": int(tables_count),
-        }
 
         # Preserve legacy top-level keys for orchestrators.
         if raw_text_out is not None:
@@ -1491,11 +1522,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if tables_audit_out is not None:
             payload["tables_audit_out"] = str(tables_audit_out)
 
-        assets_json_out.parent.mkdir(parents=True, exist_ok=True)
-        assets_json_out.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        if toolchain is not None:
+            payload["toolchain"] = toolchain
+
+        _write_json_atomic(assets_json_out, payload)
         _eprint(f"Wrote: {assets_json_out}")
 
-    # Minimal summary for calling shells
     _eprint("OK")
     return 0
 

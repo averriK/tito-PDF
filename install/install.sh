@@ -189,7 +189,7 @@ cat > "$LAUNCHER" <<EOF
 #!/bin/bash
 set -e
 LIBEXEC_DIR="$LIBEXEC_DIR"
-exec "$LIBEXEC_DIR/.venv/bin/python" "$LIBEXEC_DIR/tito-pdf" "$@"
+exec "$LIBEXEC_DIR/.venv/bin/python" "$LIBEXEC_DIR/tito-pdf" "\$@"
 EOF
 chmod +x "$LAUNCHER" || true
 

@@ -53,32 +53,49 @@ System deps (recommended):
 - `tesseract` (for OCR)
 
 ## Run
-One command (text + tables) — default mode is `robust`:
+Recommended (explicit primary output):
 
 ```bash
-./tito-pdf /path/to/doc.pdf
+tito-pdf /path/to/doc.pdf --md-out /tmp/doc.md
+```
+
+Convenience mode (no explicit output paths):
+
+```bash
+tito-pdf /path/to/doc.pdf                # writes /path/to/doc.md
+tito-pdf /path/to/doc.pdf --out-dir out   # writes out/doc.md
+tito-pdf /path/to/doc.pdf --tables --out-dir out  # writes out/doc.tables.md
+tito-pdf /path/to/doc.pdf --all --out-dir out     # writes out/doc.md + out/doc.tables.md
 ```
 
 DOCX is also supported:
 
 ```bash
-./tito-pdf /path/to/doc.docx
+tito-pdf /path/to/doc.docx --md-out /tmp/doc.md
 ```
 
 Modes:
 ```bash
-./tito-pdf /path/to/doc.pdf --mode robust   # default
-./tito-pdf /path/to/doc.pdf --mode fast     # no OCR
-./tito-pdf /path/to/doc.pdf --mode best     # force OCR + tables lenient fallback
+tito-pdf /path/to/doc.pdf --mode robust   # default
+tito-pdf /path/to/doc.pdf --mode fast     # no OCR
+tito-pdf /path/to/doc.pdf --mode best     # force OCR + tables lenient fallback
 ```
 
-Outputs (by default under the current working directory):
-- `md/<id>.retrieve.md`
-- `md/<id>.retrieve.tables.md`
-- `sessions/run-.../` (intermediates + audit JSON)
+Explicit output paths (integration mode):
+- If you set any explicit output path (`--md-out`, `--raw-text-out`, `--tables-out`, `--tables-audit-out`, `--assets-json`), `tito-pdf` writes to those paths and does not create extra output folders.
+- `--tables-audit-out` requires `--tables-out`.
 
-Integration mode:
-- If you set explicit output paths (`--raw-text-out`, `--tables-out`, `--tables-audit-out`, `--assets-json`), `tito-pdf` writes to those paths and avoids creating `md/` and `sessions/` subfolders.
+Example:
+
+```bash
+tito-pdf /path/to/doc.pdf \
+  --mode fast \
+  --md-out out/doc.md \
+  --raw-text-out out/doc.raw.txt \
+  --tables-out out/doc.tables.md \
+  --tables-audit-out out/doc.tables.audit.json \
+  --assets-json out/doc.assets.json
+```
 
 ## Agent usage
 See `AGENTS.md` for the retry heuristics and troubleshooting playbook.
