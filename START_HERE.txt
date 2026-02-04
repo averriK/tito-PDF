@@ -33,16 +33,23 @@ DONE (2026-02-04)
 - Created START_HERE.txt and MASTER_PLAN.txt
 - Fixed installer launcher heredoc to preserve "$@" at runtime (install/install.sh)
 - Updated `tito-pdf` CLI contract (source): adds `--md-out`, hides/deprecates `--id`, and makes explicit output paths write only to the requested paths (no `md/` or `sessions/`).
+- Updated `tito-pdf --help` to be GNU-style (concise usage + flags; clear metavars like PATH/DIR/N) and added `--version`.
 - Updated smoke test to validate the installed `tito-pdf` binary, assert `--id` is hidden in help, and cover `--md-out` + convenience mode.
+- Added `docs/` GitHub Pages site (Jekyll).
 
 VERIFIED (2026-02-04)
 - install/manifest.json validation: ./install/validate_manifest.sh
-- Installed help contract (must show `--md-out`, must not show `--id`):
+
+PENDING VERIFICATION (as of 2026-02-04)
+- Reinstall and verify the installed help output (GNU-style; must show `--md-out PATH`, must not show `--id`; must support `--version`):
+  - sudo ./install/install.sh
   - tito-pdf --help
-- Installed-binary smoke test (covers `--md-out` + explicit outputs + convenience mode):
+  - tito-pdf --version
+- Run the installed-binary smoke test:
   - ./tests/smoke/tito_pdf_smoke.sh
 
 PENDING (as of 2026-02-04)
+- Enable GitHub Pages to serve from `main` + `/docs` and confirm the site renders.
 - Decide whether to add deeper tests (unit tests for output-path resolution / assets JSON schema).
 
 Minimal validations (2–6 commands)
@@ -51,7 +58,7 @@ Minimal validations (2–6 commands)
 2) command -v tito-pdf
    - Confirms which binary you will execute.
 3) tito-pdf --help
-   - Validates installed CLI help and documented defaults.
+   - Validates installed CLI usage/options (help is intentionally minimal; usage/examples live in README.md).
 4) ./tests/smoke/tito_pdf_smoke.sh
    - End-to-end smoke against installed binary (PDF + DOCX): explicit outputs + convenience mode + assets JSON contract.
 5) ./install/validate_manifest.sh

@@ -102,7 +102,7 @@ Primary doc sources:
   - `schema_version == 1`
   - `tool == "tito-pdf"`
   - includes `started_at_utc`, `finished_at_utc`, `duration_ms`, and a `metrics` object.
-- `--help` must describe **real** behavior/defaults and must not invent env-var defaults.
+- `--help` must be GNU-style (concise usage + flags, clear metavars like PATH/DIR/N) and must not invent env-var defaults.
 - Install launcher must forward arguments at runtime (`"$@"`), not expand them at install time.
 - Do not introduce CRLF line endings in `*.sh` scripts (breaks macOS/Linux).
 
@@ -115,6 +115,7 @@ Primary doc sources:
   - `manifest.json`: install paths
   - `validate_manifest.sh`: quick manifest validator (needs `jq`)
 - `tests/smoke/tito_pdf_smoke.sh`: deterministic end-to-end smoke test
+- `docs/`: GitHub Pages documentation site (Jekyll)
 - `md/`, `sessions/`: legacy/generated outputs from older versions (not source; do not commit)
 
 ## Jump points (fast navigation)
@@ -165,6 +166,7 @@ Common cases:
   - `sudo ./install/install.sh`
 - If you change flags/default behavior, update all of:
   - `README.md`
+  - `docs/` (GitHub Pages site)
   - `SKILL_TITO_PDF.md`
   - this file (`AGENTS.md`)
 - Avoid docs that imply users must set env vars to run `tito-pdf`.

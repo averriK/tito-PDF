@@ -53,6 +53,8 @@ System deps (recommended):
 - `tesseract` (for OCR)
 
 ## Run
+CLI flags/parameters are documented in `tito-pdf --help` (kept intentionally options-focused). This README covers behavior and examples.
+
 Recommended (explicit primary output):
 
 ```bash
@@ -96,6 +98,14 @@ tito-pdf /path/to/doc.pdf \
   --tables-audit-out out/doc.tables.audit.json \
   --assets-json out/doc.assets.json
 ```
+
+## Documentation (GitHub Pages)
+This repo includes a docs site under `docs/` (GitHub Pages / Jekyll).
+
+To publish it on GitHub Pages:
+1. Repo Settings → Pages
+2. Build and deployment: Deploy from a branch
+3. Branch: `main` / Folder: `/docs`
 
 ## Agent usage
 See `AGENTS.md` for the retry heuristics and troubleshooting playbook.

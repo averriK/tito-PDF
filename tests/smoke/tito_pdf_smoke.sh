@@ -77,8 +77,37 @@ def write_minimal_pdf(path: str) -> None:
 write_minimal_pdf(os.environ["PDF_PATH"])
 PY
 # Ensure the installed CLI contract is visible and does not promote legacy TITO semantics.
-if tito-pdf --help 2>&1 | grep -q -- "--id"; then
+HELP_OUTPUT="$(tito-pdf --help 2>&1)"
+
+if printf '%s\n' "$HELP_OUTPUT" | grep -q -- "--id"; then
   echo "ERROR: tito-pdf --help should not show --id" >&2
+  exit 1
+fi
+
+# Help should be options-focused (no narrative blocks).
+if printf '%s\n' "$HELP_OUTPUT" | grep -q -- "Defaults are built-in"; then
+  echo "ERROR: tito-pdf --help should not include narrative text about env vars/defaults" >&2
+  exit 1
+fi
+if printf '%s\n' "$HELP_OUTPUT" | grep -q -- "Recommended (standalone) usage"; then
+  echo "ERROR: tito-pdf --help should not include long examples/epilog" >&2
+  exit 1
+fi
+
+# Metavars should be clear (PATH/DIR/N), not confusing placeholders.
+if ! printf '%s\n' "$HELP_OUTPUT" | grep -q -- "--md-out PATH"; then
+  echo "ERROR: tito-pdf --help should show '--md-out PATH'" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$HELP_OUTPUT" | grep -q -- "--tables-audit-out PATH"; then
+  echo "ERROR: tito-pdf --help should show '--tables-audit-out PATH'" >&2
+  exit 1
+fi
+
+# GNU-style: version flag.
+VERSION_OUTPUT="$(tito-pdf --version 2>&1)"
+if ! printf '%s\n' "$VERSION_OUTPUT" | grep -qE '^tito-pdf\s+'; then
+  echo "ERROR: tito-pdf --version should print a version header" >&2
   exit 1
 fi
 

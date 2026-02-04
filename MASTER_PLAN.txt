@@ -4,7 +4,7 @@ Last updated: 2026-02-04
 
 High-level objective
 - Make this repo recoverable in minutes after a context reset.
-- Ensure docs and `--help` reflect real behavior (no env-var-driven defaults).
+- Ensure docs and `--help` reflect real behavior and follow GNU-style conventions (concise usage + flags).
 - Keep tests minimal but reliable, and document how to revalidate.
 
 Current state (what matters)
@@ -13,7 +13,7 @@ Current state (what matters)
   - macOS/Linux: `install/install.sh` → installs a launcher to `tito-pdf` and a libexec runtime.
   - Windows: `install/install.ps1`.
 - Tests: `tests/smoke/tito_pdf_smoke.sh` (ephemeral venv; tiny PDF + DOCX; runs with explicit output paths like `--md-out`/`--raw-text-out` against the installed binary).
-- Docs: `README.md`, `SKILL_TITO_PDF.md`, `AGENTS.md`.
+- Docs: `README.md`, `docs/` (GitHub Pages), `SKILL_TITO_PDF.md`, `AGENTS.md`.
 
 What’s completed (unambiguous)
 - Canonical Warp plan created: fceddb23-1baa-429d-97ab-67477590c565.
@@ -24,7 +24,9 @@ What’s completed (unambiguous)
 - Installer hardening:
   - `install/install.sh` now writes a launcher that forwards args at runtime (preserves "$@" in the generated file).
 - Help clarity:
-  - `tito-pdf --help` updated to reflect the standalone contract (`--md-out`, explicit outputs vs convenience, no `--id` in help).
+  - `tito-pdf --help` is GNU-style and options-focused (usage + flags; clear metavars like PATH/DIR/N).
+  - Narrative/examples live in `README.md` and `docs/`.
+  - `tito-pdf --version` is supported.
 
 What’s pending (with “done” criteria)
 - Commit + push the current contract changes (CLI/docs/installer/tests + runbook files).
@@ -33,7 +35,7 @@ What’s pending (with “done” criteria)
   - Options: unit tests for output-path resolution (explicit vs convenience), assets JSON schema invariants.
   - Done when: there is a repeatable command documented in START_HERE (even if it’s still “smoke-only”).
 - Docs consistency sweep.
-  - Done when: `README.md` + `SKILL_TITO_PDF.md` + `AGENTS.md` match `tito-pdf --help` (installed) and explicitly warn about `tito` vs `tito-pdf` confusion.
+  - Done when: `README.md` + `docs/` + `SKILL_TITO_PDF.md` + `AGENTS.md` match `tito-pdf --help` (installed) and explicitly warn about `tito` vs `tito-pdf` confusion.
 
 Known risks / important decisions
 - `tito` is not part of this repo. If `tito --help` shows env-var-looking defaults, it’s a different tool.

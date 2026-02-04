@@ -38,6 +38,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+__version__ = "0.1.0"
+__repo_url__ = "https://github.com/averriK/tito-PDF"
+__bugs_url__ = "https://github.com/averriK/tito-PDF/issues"
+
 
 def _eprint(*args: object) -> None:
     print(*args, file=sys.stderr)
@@ -1104,28 +1108,18 @@ def extract_docx_tables(docx_path: Path) -> Tuple[List[Dict[str, Any]], List[str
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(
         prog="tito-pdf",
-        description=(
-            "Deterministic, local-only PDF/DOCX -> Markdown (+ optional tables).\n"
-            "Defaults are built-in (no environment variables are used)."
-        ),
-        epilog=(
-            "Recommended (standalone) usage:\n"
-            "  tito-pdf INPUT --md-out /tmp/out.md\n"
-            "\n"
-            "Explicit output paths (do not require --out-dir):\n"
-            "  --md-out PATH\n"
-            "  --raw-text-out PATH\n"
-            "  --tables-out PATH [--tables-audit-out PATH]\n"
-            "  --assets-json PATH\n"
-            "\n"
-            "Convenience mode (no explicit output paths):\n"
-            "  - Outputs are written next to the input file by default.\n"
-            "  - Use --out-dir DIR to write into a different directory.\n"
-            "  - If no --text/--tables/--all flags are provided, defaults to --text only.\n"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Convert a PDF/DOCX to Markdown (optionally tables).",
+        epilog=f"Report bugs to: {__bugs_url__}. Home page: {__repo_url__}.",
     )
     ap.add_argument("input_path", help="Path to a PDF or DOCX file")
+
+    ap.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"tito-pdf {__version__}",
+        help="output version information and exit",
+    )
 
     ap.add_argument(
         "--mode",
