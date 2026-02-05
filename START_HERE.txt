@@ -1,5 +1,5 @@
 START_HERE.txt (tito-pdf)
-Last updated: 2026-02-04
+Last updated: 2026-02-05
 Branch: main
 
 ONLY sources of truth (in this order)
@@ -37,6 +37,9 @@ DONE (2026-02-04)
 - Updated smoke test to validate the installed `tito-pdf` binary, assert `--id` is hidden in help, and cover `--md-out` + convenience mode.
 - Added `docs/` GitHub Pages site (Jekyll).
 
+DONE (2026-02-05)
+- Docs overhaul: rebuilt `docs/` GitHub Pages site structure (custom layout + permalinks + deep pages for CLI/output/pipeline/OCR/tables/troubleshooting/FAQ).
+
 VERIFIED (2026-02-04)
 - install/manifest.json validation: ./install/validate_manifest.sh
 - Reinstall used for verification:
@@ -47,8 +50,8 @@ VERIFIED (2026-02-04)
 - Installed-binary smoke test:
   - ./tests/smoke/tito_pdf_smoke.sh
 
-PENDING (as of 2026-02-04)
-- Enable GitHub Pages to serve from `main` + `/docs` and confirm the site renders.
+PENDING (as of 2026-02-05)
+- Verify GitHub Pages renders with the updated docs layout/permalinks (open the site and click through the main pages).
 - Decide whether to add deeper tests (unit tests for output-path resolution / assets JSON schema).
 
 Minimal validations (2–6 commands)
@@ -74,10 +77,10 @@ Next steps (concrete)
   Note: it creates a temporary venv and installs python-docx to generate the DOCX input.
 
 - If docs drift:
-  - Treat `tito-pdf --help` (installed) as the contract, then update README.md + SKILL_TITO_PDF.md + AGENTS.md.
+  - Treat `tito-pdf --help` (installed) as the contract, then update README.md + docs/ + AGENTS.md.
 
 References
 - AGENTS.md
 - MASTER_PLAN.txt
 - README.md
-- SKILL_TITO_PDF.md
+- docs/

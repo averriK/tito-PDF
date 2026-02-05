@@ -1,6 +1,6 @@
 COPY OF WARP PLAN: fceddb23-1baa-429d-97ab-67477590c565
 Repo: tito-pdf
-Last updated: 2026-02-04
+Last updated: 2026-02-05
 
 High-level objective
 - Make this repo recoverable in minutes after a context reset.
@@ -13,7 +13,13 @@ Current state (what matters)
   - macOS/Linux: `install/install.sh` → installs a launcher to `tito-pdf` and a libexec runtime.
   - Windows: `install/install.ps1`.
 - Tests: `tests/smoke/tito_pdf_smoke.sh` (ephemeral venv; tiny PDF + DOCX; runs with explicit output paths like `--md-out`/`--raw-text-out` against the installed binary).
-- Docs: `README.md`, `docs/` (GitHub Pages), `SKILL_TITO_PDF.md`, `AGENTS.md`.
+- Docs:
+  - `README.md` (quickstart)
+  - `docs/` (GitHub Pages / Jekyll)
+    - Custom layout: `docs/_layouts/default.html`
+    - Stable permalinks + deep pages: `/docs/cli/`, `/docs/output/`, `/docs/pipeline/`, `/docs/ocr/`, `/docs/tables/`, `/docs/troubleshooting/`, `/docs/faq/`
+  - Spanish: `/docs/es/` (published) / `docs/es.md` (source)
+  - `AGENTS.md` (stable orientation)
 
 What’s completed (unambiguous)
 - Canonical Warp plan created: fceddb23-1baa-429d-97ab-67477590c565.
@@ -35,7 +41,7 @@ What’s pending (with “done” criteria)
   - Options: unit tests for output-path resolution (explicit vs convenience), assets JSON schema invariants.
   - Done when: there is a repeatable command documented in START_HERE (even if it’s still “smoke-only”).
 - Docs consistency sweep.
-  - Done when: `README.md` + `docs/` + `SKILL_TITO_PDF.md` + `AGENTS.md` match `tito-pdf --help` (installed) and explicitly warn about `tito` vs `tito-pdf` confusion.
+  - Done when: `README.md` + `docs/` + `AGENTS.md` match `tito-pdf --help` (installed) and explicitly warn about `tito` vs `tito-pdf` confusion.
 
 Known risks / important decisions
 - `tito` is not part of this repo. If `tito --help` shows env-var-looking defaults, it’s a different tool.
@@ -49,6 +55,6 @@ References
 - START_HERE.txt (operational status + exact commands)
 - AGENTS.md (stable orientation + contracts)
 - README.md (human quickstart)
-- SKILL_TITO_PDF.md (Spanish skill doc)
+- docs/ (GitHub Pages manual)
 - Source: `tito-pdf`
 - Smoke tests: `tests/smoke/tito_pdf_smoke.sh`

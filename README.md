@@ -100,9 +100,22 @@ tito-pdf /path/to/doc.pdf \
 ```
 
 ## Documentation (GitHub Pages)
-This repo includes a docs site under `docs/` (GitHub Pages / Jekyll).
+This repo publishes documentation via GitHub Pages from the `docs/` folder.
 
-To publish it on GitHub Pages:
+- Site home: https://averrik.github.io/tito-PDF/
+- Docs index: https://averrik.github.io/tito-PDF/docs/
+
+Core pages:
+- Install: https://averrik.github.io/tito-PDF/docs/install/
+- Usage: https://averrik.github.io/tito-PDF/docs/usage/
+- CLI reference (every parameter): https://averrik.github.io/tito-PDF/docs/cli/
+- Output contract: https://averrik.github.io/tito-PDF/docs/output/
+- Pipeline (how it works): https://averrik.github.io/tito-PDF/docs/pipeline/
+- OCR: https://averrik.github.io/tito-PDF/docs/ocr/
+- Tables: https://averrik.github.io/tito-PDF/docs/tables/
+- Troubleshooting: https://averrik.github.io/tito-PDF/docs/troubleshooting/
+
+Publishing settings (GitHub):
 1. Repo Settings → Pages
 2. Build and deployment: Deploy from a branch
 3. Branch: `main` / Folder: `/docs`

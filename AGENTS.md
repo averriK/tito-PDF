@@ -14,7 +14,7 @@ It is **not**:
 ## Recovery order (if you lost all context)
 1) `START_HERE.txt` (operational source of truth, current status, exact commands).
 2) `MASTER_PLAN.txt` (local snapshot of the canonical Warp plan).
-3) `README.md` (human quickstart) and `SKILL_TITO_PDF.md` (Spanish skill doc).
+3) `README.md` (human quickstart) and `docs/` (GitHub Pages manual).
 4) Use the “Jump points” section below to navigate code quickly.
 
 ## Product summary
@@ -90,7 +90,8 @@ Overrides:
 
 Primary doc sources:
 - User-level: `README.md`
-- Skill-level (Spanish): `SKILL_TITO_PDF.md`
+- Manual: `docs/` (GitHub Pages)
+  - Spanish: `docs/es.md`
 - Source-of-truth: `tito-pdf` (CLI + behavior)
 
 ## Non-negotiables (no-regress policies)
@@ -115,7 +116,12 @@ Primary doc sources:
   - `manifest.json`: install paths
   - `validate_manifest.sh`: quick manifest validator (needs `jq`)
 - `tests/smoke/tito_pdf_smoke.sh`: deterministic end-to-end smoke test
-- `docs/`: GitHub Pages documentation site (Jekyll)
+- `docs/`: GitHub Pages documentation (Jekyll source root)
+  - `docs/_config.yml`
+  - `docs/_layouts/default.html`
+  - `docs/index.md` (site home)
+  - `docs/docs.md` (docs index)
+  - Core refs: `docs/cli.md`, `docs/output.md`, `docs/pipeline.md`, `docs/ocr.md`, `docs/tables.md`, `docs/troubleshooting.md`
 - `md/`, `sessions/`: legacy/generated outputs from older versions (not source; do not commit)
 
 ## Jump points (fast navigation)
@@ -124,7 +130,9 @@ Files:
 - `tests/smoke/tito_pdf_smoke.sh`
 - `install/install.sh`
 - `install/manifest.json`
-- `README.md`, `SKILL_TITO_PDF.md`
+- `README.md`
+- `docs/index.md`, `docs/docs.md`
+- `docs/cli.md`, `docs/output.md`, `docs/pipeline.md`, `docs/ocr.md`, `docs/tables.md`, `docs/troubleshooting.md`
 
 Grep targets:
 - `md_out`
@@ -167,7 +175,6 @@ Common cases:
 - If you change flags/default behavior, update all of:
   - `README.md`
   - `docs/` (GitHub Pages site)
-  - `SKILL_TITO_PDF.md`
   - this file (`AGENTS.md`)
 - Avoid docs that imply users must set env vars to run `tito-pdf`.
 - Keep operational status out of this file; put it in `START_HERE.txt`.

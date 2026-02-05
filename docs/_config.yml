@@ -1,3 +1,17 @@
 title: tito-pdf
 description: Standalone, deterministic PDF/DOCX → Markdown (+ optional tables)
-theme: jekyll-theme-cayman
+repo_url: https://github.com/averriK/tito-PDF
+issues_url: https://github.com/averriK/tito-PDF/issues
+
+permalink: pretty
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
