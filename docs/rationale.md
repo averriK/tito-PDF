@@ -18,10 +18,9 @@ Short answer: because PDF/DOCX conversion is not one problem.
 
 …are separate failure modes, and no single library is best-in-class for all of them.
 
-This repo is intentionally conservative:
-- deterministic/offline (no LLM, no network)
-- robust via fallbacks
-- stable output contract
+This repo focuses on:
+- a stable CLI/output contract
+- predictable behavior (and fallbacks where they are safe)
 
 ## What this code is
 `tito-pdf` is a **single-document converter**.
@@ -58,28 +57,14 @@ Problem it solves:
 - Many PDF parsers fail to open such files reliably.
 
 What `tito-pdf` does:
-- best-effort `qpdf --decrypt` into a working file
-- if it fails, it falls back to copying the original PDF
+- runs `qpdf --decrypt` into a working file
+- if `qpdf` is missing or the command fails, the run stops with an error
 
 Why not do this “pure Python”?
 - PDF encryption/decryption/normalization is a deep rabbit hole.
 - `qpdf` is the standard, battle-tested tool for this job.
 
-### 2) Ghostscript (`gs` / `gswin64c`) (system tool)
-Used in `prepare_pdf()`.
-
-Problem it solves:
-- If OCR is disabled, embedded raster images are often dead weight.
-- Large image-heavy PDFs can slow down parsing.
-
-What `tito-pdf` does:
-- when OCR is disabled, it optionally rewrites the PDF with `-dFILTERIMAGE`.
-
-Important limitation:
-- This can remove content that only exists as images.
-- That is why the code only strips images when OCR is disabled.
-
-### 3) `ocrmypdf` + `tesseract` (OCR toolchain)
+### 2) `ocrmypdf` + `tesseract` (OCR toolchain)
 Used in `ocr_pdf()`.
 
 Problem it solves:
@@ -100,7 +85,7 @@ Why not OCR in pure Python?
 - OCR quality depends on mature engines and language data.
 - `tesseract` is the standard engine; `ocrmypdf` orchestrates PDF-level OCR robustly.
 
-### 4) PyMuPDF (`fitz`) (Python library)
+### 3) PyMuPDF (`fitz`) (Python library)
 Used in `extract_lines_layout()` and also the primary table finder.
 
 Problems it solves:
@@ -111,7 +96,7 @@ Why not `pdfplumber` for everything?
 - `pdfplumber` is excellent, but tends to be slower and is not the best tool for layout-driven Markdown heuristics.
 - PyMuPDF is already required for the text pipeline; using it for tables first keeps the dependency set minimal.
 
-### 5) Multiple table extractors (PyMuPDF + optional Camelot + pdfplumber)
+### 4) Multiple table extractors (PyMuPDF + optional Camelot + pdfplumber)
 Used in `extract_tables()`.
 
 Problem it solves:
@@ -140,7 +125,7 @@ This is reflected in the code:
 - `--tables-lenient` enables more aggressive strategies
 - `--mode best` triggers an automatic lenient retry only when strict produces zero accepted tables (`tables_auto_fallback`)
 
-### 6) `python-docx` (DOCX parsing)
+### 5) `python-docx` (DOCX parsing)
 DOCX is not PDF.
 
 Problem it solves:
@@ -171,7 +156,7 @@ Explicit flags win:
 If you set any explicit output path, the tool enters explicit output mode.
 
 Design intent:
-- integration/orchestrators need exact file paths and must not get surprise folders
+- integrations need exact file paths and must not get surprise folders
 
 ### Why `--tables-audit-out` requires `--tables-out`
 The audit is a companion to the tables Markdown file; the contract enforces they move together.

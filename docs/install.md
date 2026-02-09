@@ -53,47 +53,23 @@ Notes:
 - The installer can (best effort) install system dependencies via `winget`/`choco`.
 - Open a **new terminal** after installation so PATH changes take effect.
 
-## Recommended system dependencies (and why they exist)
-`tito-pdf` will run without these tools, but behavior changes when they are missing.
-
-- Without `qpdf`, PDF normalization/decryption is skipped.
-- Without Ghostscript, image stripping is skipped.
-- Without `tesseract`, OCR may fail or be unavailable (scanned PDFs will often produce little/no text).
-
+## Required system dependency
 ### `qpdf`
-Used in `prepare_pdf()` to normalize/decrypt PDFs (`qpdf --decrypt`). This improves robustness for:
-- PDFs that are technically “encrypted” or partially protected.
-- PDFs with structural oddities that can break downstream parsers.
+`qpdf` is required for PDF conversion.
 
-macOS install:
+- `tito-pdf` uses it in `prepare_pdf()` to normalize/decrypt PDFs (`qpdf --decrypt`).
+
+Install on macOS:
 
 ```bash
 brew install qpdf
 ```
 
-### Ghostscript (`gs` / `gswin64c`)
-Used in `prepare_pdf()` to optionally strip raster images (`-dFILTERIMAGE`) **when OCR is disabled**.
-
-Why it matters:
-- Smaller PDFs can be faster for layout/text extraction.
-- It can reduce file size and speed up parsing when images are not needed.
-
-Important limitation:
-- Stripping images can remove content that only exists as images.
-- `tito-pdf` only strips images when OCR is disabled.
-
-macOS install:
-
-```bash
-brew install ghostscript
-```
-
-On Windows the command is often `gswin64c` (or `gswin32c`).
-
+## OCR dependency (only if you use OCR)
 ### `tesseract`
-Required for OCR. `ocrmypdf` uses Tesseract under the hood.
+OCR requires `tesseract`.
 
-macOS install:
+Install on macOS:
 
 ```bash
 brew install tesseract

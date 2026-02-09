@@ -18,7 +18,7 @@ tito-pdf input.pdf \
 ```
 
 Why this exists:
-- Orchestrators need a stable, small “receipt” describing what happened.
+- Automation wrappers need a stable, small “receipt” describing what happened.
 - Deterministic tools still depend on toolchain versions; capturing them helps with debugging.
 
 ## Contract (stable keys)
@@ -57,7 +57,6 @@ If available, `tito-pdf` includes a `toolchain` object with:
 - Platform string
 - System tools (paths + `--version` output for):
   - `qpdf`
-  - Ghostscript (`gs` / `gswin64c`)
   - `ocrmypdf`
   - `tesseract`
 - Python package versions for:

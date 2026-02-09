@@ -5,7 +5,7 @@
 #   ./install/uninstall.sh
 #
 # This script removes the launcher and libexec directory created by install/install.sh.
-# It does not remove system packages (qpdf/ghostscript/tesseract).
+# It does not remove system packages (qpdf/tesseract).
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

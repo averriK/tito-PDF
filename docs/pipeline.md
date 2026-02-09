@@ -8,12 +8,12 @@ permalink: /docs/pipeline/
 This page documents the internal stages of `tito-pdf` as implemented in the `tito-pdf` script.
 
 Goals:
-- Be deterministic (no LLM, no network).
-- Be robust across “normal messy PDFs” by using a small toolchain + conservative heuristics.
-- Keep the output contract stable (explicit outputs are authoritative; no session folders).
+- Describe the real pipeline stages implemented in the `tito-pdf` script.
+- Explain why each stage exists and what it outputs.
+- Keep the output contract stable (explicit outputs are authoritative; no extra output folders).
 
 ## High-level flow
-`tito-pdf` is a **single-document converter**. It does not have TITO-style run/session semantics.
+`tito-pdf` converts one input document per invocation.
 
 Conceptually:
 
@@ -29,32 +29,14 @@ Conceptually:
 ### 1) Prepare PDF (`prepare_pdf`)
 Purpose: create a working copy that is easier for downstream parsers.
 
-Implementation (best effort):
-1. **Normalize/decrypt via `qpdf`** (when available):
-   - Runs `qpdf --decrypt input.pdf tmp.pdf`.
-   - If this fails, the tool falls back to copying the original input.
+Implementation:
+- Requires `qpdf` on PATH.
+- Runs `qpdf --decrypt input.pdf prepared.pdf`.
+- If `qpdf` is missing or the command fails: the run stops with an error.
 
 Why `qpdf` exists in the pipeline:
 - Some PDFs are encrypted or have structural quirks.
 - Normalization improves the chance that PyMuPDF and table extractors can read the file reliably.
-
-2. **Optionally strip raster images via Ghostscript** (when available):
-   - Runs Ghostscript in `pdfwrite` mode with `-dFILTERIMAGE`.
-   - Roughly equivalent to:
-
-     ```bash
-     gs -q -o output.pdf -sDEVICE=pdfwrite -dFILTERIMAGE input.pdf
-     ```
-
-   - On Windows, Ghostscript often exposes `gswin64c`/`gswin32c` rather than `gs`.
-
-Why Ghostscript exists in the pipeline:
-- If you are not doing OCR, images are often dead weight.
-- Stripping images can reduce file size and speed up layout/table extraction.
-
-Important OCR rule:
-- If you plan to run OCR, do **not** strip images first.
-- `tito-pdf` follows this by setting `strip_images=True` only when OCR is disabled.
 
 ### 2) OCR (`ocr_pdf`)
 Purpose: improve extraction quality for scanned PDFs or PDFs with a bad text layer.
@@ -166,14 +148,3 @@ Implementation detail:
 Benefits:
 - Avoids leaving a misleading empty output if extraction fails mid-run.
 
-## Determinism (what it means here)
-`tito-pdf` is deterministic in the sense that it:
-- does not call remote services
-- does not sample randomness
-- uses stable heuristics
-
-However, outputs can still differ between machines because:
-- PDF parsing depends on library versions (PyMuPDF, pdfplumber, etc.)
-- OCR depends on `ocrmypdf` + `tesseract` versions and language data
-
-If you need forensic metadata, enable `--assets-json` to capture toolchain versions/paths.

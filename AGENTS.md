@@ -18,7 +18,7 @@ It is **not**:
 4) Use the “Jump points” section below to navigate code quickly.
 
 ## Product summary
-`tito-pdf` is a **deterministic, local-only** PDF/DOCX → Markdown (+ tables) helper inspired by TITO’s `retrieve` naming, but **without** LLM / claude-flow / network.
+`tito-pdf` is a **deterministic, local-only** PDF/DOCX → Markdown (+ tables) helper.
 
 ### User-facing vs internal
 User-facing (contract):
@@ -33,15 +33,12 @@ Internal stages (implementation details):
 - PDF tables: `extract_tables()` (PyMuPDF primary; optional Camelot; pdfplumber fallback)
 - DOCX: `extract_docx_markdown()` / `extract_docx_text()` / `extract_docx_tables()`
 
-## IMPORTANT: common confusion (tito vs tito-pdf)
-If you run **`tito --help`** and it shows confusing defaults that look like environment variables, you are looking at **a different tool** (the TITO orchestrator), not this repo.
-
+## IMPORTANT: common confusion (multiple similarly named commands)
 This repo guarantees the behavior of:
 - `./tito-pdf --help` (repo script)
 - `tito-pdf --help` (only after installing *this* repo)
 
 Sanity checks:
-- `command -v tito`
 - `command -v tito-pdf`
 - `tito-pdf --help`
 

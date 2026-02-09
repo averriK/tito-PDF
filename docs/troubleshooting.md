@@ -7,15 +7,21 @@ permalink: /docs/troubleshooting/
 # Troubleshooting
 This page focuses on common failure modes and the shortest retry path.
 
-## 0) Sanity check: are you running the right binary?
-If you are seeing help output with env-var-looking defaults, you are probably running **`tito`** (the orchestrator), not `tito-pdf`.
-
-Commands:
+## 0) Sanity check: which `tito-pdf` are you running?
 
 ```bash
-command -v tito
 command -v tito-pdf
 tito-pdf --help
+```
+
+## Missing qpdf
+Symptoms:
+- `ERROR: failed to prepare PDF: qpdf is required ...`
+
+Fix:
+
+```bash
+brew install qpdf
 ```
 
 ## Missing Python libraries (PyMuPDF / pdfplumber / python-docx)
@@ -24,14 +30,12 @@ Symptoms:
 - Import error for `pdfplumber`
 - Import error for `docx` (python-docx)
 
-If you installed via the repo installer, these should be present in the runtime venv.
-
-If you are running from source in a dev venv:
+Fix:
+Reinstall `tito-pdf` using the repo installer (it recreates the runtime venv and installs `requirements.txt`):
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+sudo ./install/install.sh
+command -v tito-pdf
 ```
 
 ## OCR issues

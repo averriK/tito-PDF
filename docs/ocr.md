@@ -28,13 +28,10 @@ brew install tesseract
 ```
 
 ## How `ocrmypdf` is invoked (implementation detail)
-`tito-pdf` tries the safest invocation that works in both “installed runtime” and “dev venv” contexts:
+`tito-pdf` prefers the `ocrmypdf` console entrypoint when it is available on PATH.
 
-1) If the `ocrmypdf` console entrypoint is on PATH:
-- it runs `ocrmypdf ...` directly.
-
-2) If the entrypoint is missing but the Python package is installed:
-- it runs `python -m ocrmypdf ...`.
+If the entrypoint is not on PATH but the Python package is installed, it falls back to:
+- `python -m ocrmypdf ...`
 
 Flags used:
 - `--quiet`
@@ -94,10 +91,5 @@ OCR can be slow. When iterating:
 ```bash
 tito-pdf input.pdf --mode best --md-out out/input.md --max-pages 10
 ```
-
-## Why we do not strip images before OCR
-The PDF preparation stage can optionally strip raster images using Ghostscript.
-
-OCR needs those images (that’s where the scanned text lives), so `tito-pdf` only strips images when OCR is disabled.
 
 See: [Pipeline]({{ "/docs/pipeline/" | relative_url }}).

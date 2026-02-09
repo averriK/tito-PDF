@@ -1,7 +1,7 @@
 # tito-pdf
-Standalone, deterministic PDF → Markdown helper inspired by `tito retrieve`, but **without** LLM/claude-flow.
+Convert `.pdf` / `.docx` documents to Markdown (and optionally extract tables).
 
-If you are Claude (an agent), read `AGENTS.md`.
+For maintainers and agents, read `AGENTS.md`.
 
 ## Install
 ### Option A (recommended): installer
@@ -21,7 +21,7 @@ sudo ./install/uninstall.sh
 #### Windows (PowerShell)
 User install (writes to `%LOCALAPPDATA%\\Programs\\_runtime\\tito-pdf` and creates shims under `%LOCALAPPDATA%\\Programs`).
 
-By default, the installer will also attempt a best-effort install of recommended system dependencies (`qpdf`, Ghostscript, `tesseract`) via `winget`/`choco` when available. To skip that step:
+By default, the installer will also attempt a best-effort install of recommended system dependencies (`qpdf`, `tesseract`) via `winget`/`choco` when available. To skip that step:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\\install\\install.ps1 -InstallSystemDeps:$false
@@ -39,18 +39,18 @@ Uninstall:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install\uninstall.ps1
 ```
 
-### Option B: dev install (venv)
-Create a venv (or use `uv`) and install deps:
+### System dependency (required)
+Install `qpdf` (required for PDF conversion):
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+brew install qpdf
 ```
 
-System deps (recommended):
-- `qpdf`, `gs` (Ghostscript)
-- `tesseract` (for OCR)
+Optional (only if you use OCR):
+
+```bash
+brew install tesseract
+```
 
 ## Run
 CLI flags/parameters are documented in `tito-pdf --help` (kept intentionally options-focused). This README covers behavior and examples.

@@ -8,8 +8,11 @@
 # - This script installs the tito-pdf launcher into /usr/local/bin (or the
 #   manifest-defined BIN_DIR) and installs runtime assets into /usr/local/libexec/tito-pdf.
 # - It creates a dedicated Python venv under libexec and installs requirements there.
-# - System deps (qpdf/gs/tesseract) are recommended; if missing, we warn and (when
-#   Homebrew is available and not running as root) attempt to install them.
+# - System deps:
+#   - qpdf is required for PDF conversion
+#   - tesseract is recommended for OCR
+#   If deps are missing and Homebrew is available (and not running as root), this
+#   script may attempt a best-effort install.
 #
 # IMPORTANT: do not run sudo inside this script. If you want a system-wide install,
 # run this script with sudo.
@@ -135,29 +138,36 @@ if [ ! -d "$LIBEXEC_DIR" ]; then
   }
 fi
 
-# System deps: best-effort install via brew (only when not root)
-MISSING_BREW_PKGS=()
+# System deps
+# - qpdf is required for PDF conversion
+# - tesseract is recommended for OCR
+
+# Best-effort install via brew (only when not root)
 if ! command -v qpdf >/dev/null 2>&1; then
-  MISSING_BREW_PKGS+=(qpdf)
-fi
-if ! command -v gs >/dev/null 2>&1; then
-  MISSING_BREW_PKGS+=(ghostscript)
-fi
-if ! command -v tesseract >/dev/null 2>&1; then
-  MISSING_BREW_PKGS+=(tesseract)
+  if command -v brew >/dev/null 2>&1 && [ "$(id -u)" != "0" ]; then
+    echo "Attempting to install required dependency via Homebrew: qpdf"
+    brew install qpdf || true
+  fi
 fi
 
-if [ ${#MISSING_BREW_PKGS[@]} -gt 0 ]; then
-  echo "WARNING: Missing recommended system dependencies: ${MISSING_BREW_PKGS[*]}" >&2
+if ! command -v qpdf >/dev/null 2>&1; then
+  echo "ERROR: qpdf is required for PDF conversion but was not found on PATH." >&2
+  echo "Install qpdf and re-run this installer:" >&2
+  echo "  brew install qpdf" >&2
+  exit 1
+fi
+
+if ! command -v tesseract >/dev/null 2>&1; then
+  echo "WARNING: tesseract not found; OCR will be unavailable." >&2
 
   if command -v brew >/dev/null 2>&1 && [ "$(id -u)" != "0" ]; then
-    echo "Attempting to install missing deps via Homebrew..."
-    brew install "${MISSING_BREW_PKGS[@]}" || {
-      echo "WARNING: Homebrew install failed; continue anyway." >&2
+    echo "Attempting to install recommended dependency via Homebrew: tesseract"
+    brew install tesseract || {
+      echo "WARNING: Homebrew install failed; continuing without tesseract." >&2
     }
   else
-    echo "Install them with Homebrew (recommended):" >&2
-    echo "  brew install ${MISSING_BREW_PKGS[*]}" >&2
+    echo "Install it with Homebrew (recommended for OCR):" >&2
+    echo "  brew install tesseract" >&2
   fi
 
   echo ""

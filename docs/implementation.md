@@ -88,35 +88,13 @@ Resolution logic (as implemented):
   - force `force_ocr = False` (so `--no-ocr` wins).
 
 ## PDF preparation (`prepare_pdf`)
-`prepare_pdf(input_pdf, output_pdf, strip_images=True)` is best-effort and uses system tools when present.
+`prepare_pdf(input_pdf, output_pdf)` produces a normalized working copy for downstream parsing.
 
 ### `qpdf` step
 - Detect `qpdf` via `shutil.which("qpdf")`.
-- If present: attempt `qpdf --decrypt input output_tmp`.
-- If the qpdf step fails:
-  - delete the temp file if present
-  - copy the original PDF to `output_pdf`
-  - **return early** (Ghostscript is not attempted in this failure path).
-
-### Ghostscript step (`-dFILTERIMAGE`)
-- Detect Ghostscript via `gs` or `gswin64c` or `gswin32c`.
-- If `strip_images` is true and Ghostscript is available:
-  - run:
-
-  ```bash
-  gs -q -o output.pdf -sDEVICE=pdfwrite -dFILTERIMAGE input.pdf
-  ```
-
-- Otherwise it copies the input to output.
-
-### Why `strip_images` is tied to OCR
-In the PDF pipeline, `tito-pdf` calls:
-
-- `prepare_pdf(..., strip_images=bool(no_ocr))`
-
-So:
-- when OCR is disabled (`no_ocr == True`): strip images (if Ghostscript exists)
-- when OCR is enabled: keep images (OCR needs them)
+- If missing: the run stops with an error (PDF conversion requires `qpdf`).
+- Runs: `qpdf --decrypt input.pdf output.pdf`.
+- If `qpdf` fails: the run stops with an error.
 
 ## OCR stage (`ocr_pdf`)
 `ocr_pdf(input_pdf, output_pdf, force)`:

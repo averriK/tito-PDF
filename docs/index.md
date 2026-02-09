@@ -1,18 +1,11 @@
 ---
 layout: default
-title: tito-pdf — Documentation
+title: tito-PDF
 permalink: /
 ---
 
 # tito-pdf
-`tito-pdf` is a standalone, deterministic, local-only converter:
-
-- Inputs: `.pdf`, `.docx`
-- Outputs: Markdown (`.md`) + optional tables Markdown (`.tables.md`)
-- Offline: no network calls, no LLMs
-- No hidden run/job/session semantics
-
-If you are looking for **TITO** (the orchestrator) semantics, this repo is **not** that tool.
+Convert `.pdf` / `.docx` documents to Markdown (and optionally extract tables).
 
 ## Quickstart (recommended)
 Write primary Markdown to an explicit path:
@@ -98,16 +91,9 @@ Core references:
 - FAQ: [FAQ]({{ "/docs/faq/" | relative_url }})
 - Español: [Guía rápida]({{ "/docs/es/" | relative_url }})
 
-## tito vs tito-pdf (common confusion)
-- `tito` is an orchestrator with run/job/session semantics.
-- `tito-pdf` is a single-document converter that writes deterministic files.
-
-If `tito --help` shows env-var-looking defaults, that is **not** this repo.
-
-Sanity checks:
+## Sanity check (installed CLI)
 
 ```bash
-command -v tito
 command -v tito-pdf
 tito-pdf --help
 ```

@@ -22,7 +22,7 @@ param(
     # Create shims in UserBinDir and ensure User PATH contains UserBinDir (default: true)
     [switch]$SetupShims,
 
-    # Attempt to install missing system dependencies (qpdf, ghostscript, tesseract)
+    # Attempt to install missing system dependencies (qpdf, tesseract)
     # via winget/choco when available (default: true)
     [switch]$InstallSystemDeps,
 
@@ -151,16 +151,6 @@ function Command-Path {
     return $null
 }
 
-function Get-GhostscriptPath {
-    $p = Command-Path -Name 'gs'
-    if ($p) { return $p }
-    $p = Command-Path -Name 'gswin64c'
-    if ($p) { return $p }
-    $p = Command-Path -Name 'gswin32c'
-    if ($p) { return $p }
-    return $null
-}
-
 function Install-WithWinget {
     param(
         [Parameter(Mandatory=$true)][string]$DisplayName,
@@ -216,12 +206,10 @@ function Install-WithChoco {
 
 function Ensure-SystemDeps {
     $qpdf = Command-Path -Name 'qpdf'
-    $gs = Get-GhostscriptPath
     $tesseract = Command-Path -Name 'tesseract'
 
     $missing = @()
     if (-not $qpdf) { $missing += 'qpdf' }
-    if (-not $gs) { $missing += 'ghostscript' }
     if (-not $tesseract) { $missing += 'tesseract' }
 
     if ($missing.Count -eq 0) {
@@ -229,14 +217,14 @@ function Ensure-SystemDeps {
     }
 
     Write-Host "" 
-    Write-Host "[WARN] Missing recommended system dependencies: $($missing -join ', ')" -ForegroundColor Yellow
+    Write-Host "[WARN] Missing system dependencies: $($missing -join ', ')" -ForegroundColor Yellow
 
     $hasWinget = [bool](Command-Path -Name 'winget')
     $hasChoco = [bool](Command-Path -Name 'choco')
 
     if (-not $hasWinget -and -not $hasChoco) {
         Write-Host "[WARN] Neither winget nor choco found in PATH; skipping auto-install." -ForegroundColor Yellow
-        Write-Host "[INFO] Install these deps manually (recommended): qpdf, Ghostscript, tesseract" -ForegroundColor Cyan
+        Write-Host "[INFO] Install these deps manually (recommended): qpdf, tesseract" -ForegroundColor Cyan
         return
     }
 
@@ -247,10 +235,6 @@ function Ensure-SystemDeps {
             'qpdf' {
                 $ok = Install-WithWinget -DisplayName 'qpdf' -IdCandidates @('QPDF.QPDF', 'qpdf.qpdf')
                 if (-not $ok) { $ok = Install-WithChoco -DisplayName 'qpdf' -PkgCandidates @('qpdf') }
-            }
-            'ghostscript' {
-                $ok = Install-WithWinget -DisplayName 'Ghostscript' -IdCandidates @('ArtifexSoftware.Ghostscript')
-                if (-not $ok) { $ok = Install-WithChoco -DisplayName 'Ghostscript' -PkgCandidates @('ghostscript') }
             }
             'tesseract' {
                 $ok = Install-WithWinget -DisplayName 'Tesseract OCR' -IdCandidates @('UB-Mannheim.TesseractOCR', 'Tesseract-OCR.Tesseract')
@@ -276,6 +260,14 @@ if ($InstallSystemDeps) {
     try { Ensure-SystemDeps } catch {
         Write-Host "[WARN] System dependency installation failed (continuing): $($_.Exception.Message)" -ForegroundColor Yellow
     }
+}
+
+# qpdf is required for PDF conversion.
+$qpdf = Command-Path -Name 'qpdf'
+if (-not $qpdf) {
+    Write-Host "[ERROR] qpdf is required for PDF conversion but was not found on PATH." -ForegroundColor Red
+    Write-Host "[INFO] Install qpdf and re-run this installer." -ForegroundColor Cyan
+    exit 1
 }
 
 $libexecDir = Join-Path $InstallRoot "libexec"
