@@ -28,13 +28,15 @@ In explicit output mode:
 - `--out-dir` and convenience flags (`--text`, `--tables`, `--all`) are ignored.
 
 ### 2) Convenience mode (no explicit output paths)
-If you do not provide any explicit output paths:
-- Default: writes `<stem>.md` next to the input file.
-- `--out-dir DIR` writes into a different directory.
-- `--tables` or `--all` also writes `<stem>.tables.md`.
+If you do not provide any explicit output paths, deliverables follow the TITO folder convention:
+- Outputs go to `<out-dir>/md/` (default `out-dir` is CWD).
+- Naming: `md/<id>.retrieve.md` and `md/<id>.retrieve.tables.md`.
+- `--id ID` sets the output prefix (defaults to input filename stem if omitted).
+- `--tables` or `--all` also writes `<id>.retrieve.tables.md`.
+- `--keep-sessions` preserves intermediate files in `sessions/run-YYYYMMDD_HHMMSS/`.
 
 ## Outputs (what each file contains)
-### Primary Markdown (`--md-out` or `<stem>.md`)
+### Primary Markdown (`--md-out` or `md/<id>.retrieve.md`)
 Best-effort Markdown reconstruction from the document content.
 
 Notes:
@@ -44,7 +46,7 @@ Notes:
 ### Raw text (`--raw-text-out`)
 Plaintext (UTF-8). This is intended for downstream slicing/cleanup tools that prefer raw text.
 
-### Tables Markdown (`--tables-out` or `<stem>.tables.md`)
+### Tables Markdown (`--tables-out` or `md/<id>.retrieve.tables.md`)
 A Markdown file containing one or more tables.
 
 Format notes:
@@ -73,8 +75,9 @@ Contract notes:
 See: [Assets JSON]({{ "/docs/assets-json/" | relative_url }}).
 
 ## Intermediates
-Intermediates (prepared PDFs / OCR outputs) are stored in a temporary working directory and are not kept by default.
+Intermediates (prepared PDFs / OCR outputs) are stored in a temporary working directory and deleted by default.
 
-This is a deliberate contract:
-- No `sessions/` folders.
-- No “run ids” as part of the normal output layout.
+To preserve intermediates for debugging/audit:
+- Use `--keep-sessions` to create `sessions/run-YYYYMMDD_HHMMSS/` with prepared.pdf, ocr.pdf, etc.
+
+Deliverables always go to `md/`; intermediates go to `sessions/` only when requested.

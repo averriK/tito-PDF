@@ -1,60 +1,63 @@
-COPY OF WARP PLAN: fceddb23-1baa-429d-97ab-67477590c565
+COPY OF WARP PLAN: ba6e11a7-e4b8-4be1-b34a-4d74f3e99688
 Repo: tito-pdf
-Last updated: 2026-02-05
+Last updated: 2026-02-12
 
 High-level objective
-- Make this repo recoverable in minutes after a context reset.
-- Ensure docs and `--help` reflect real behavior and follow GNU-style conventions (concise usage + flags).
-- Keep tests minimal but reliable, and document how to revalidate.
+- Align convenience-mode outputs with the TITO folder layout:
+  - deliverables to md/
+  - intermediates to sessions/ only with --keep-sessions
+- Keep explicit-output mode strict (write only to requested paths).
+- Keep the recovery pack up to date (START_HERE.txt, AGENTS.md, MASTER_PLAN.txt).
 
 Current state (what matters)
-- Entrypoint: `./tito-pdf` (single Python script; argparse CLI).
+- Entrypoints:
+  - Repo script: ./tito-pdf
+  - Installed binary: tito-pdf (via installers)
+- Output styles:
+  - Explicit output mode: uses --md-out/--tables-out/etc and writes ONLY to those paths (no extra folders).
+  - Convenience mode: writes deliverables to <out-dir>/md/ using:
+    - md/<id>.retrieve.md
+    - md/<id>.retrieve.tables.md
+    - --keep-sessions preserves intermediates in sessions/run-YYYYMMDD_HHMMSS/
 - Installers:
-  - macOS/Linux: `install/install.sh` → installs a launcher to `tito-pdf` and a libexec runtime.
-  - Windows: `install/install.ps1`.
-- Tests: `tests/smoke/tito_pdf_smoke.sh` (ephemeral venv; tiny PDF + DOCX; runs with explicit output paths like `--md-out`/`--raw-text-out` against the installed binary).
+  - macOS/Linux: install/install.sh
+  - Windows: install/install.ps1
+- Tests:
+  - tests/smoke/tito_pdf_smoke.sh (deterministic end-to-end test against the installed binary)
 - Docs:
-  - `README.md` (quickstart)
-  - `docs/` (GitHub Pages / Jekyll)
-    - Custom layout: `docs/_layouts/default.html`
-    - Stable permalinks + deep pages: `/docs/cli/`, `/docs/output/`, `/docs/pipeline/`, `/docs/ocr/`, `/docs/tables/`, `/docs/troubleshooting/`, `/docs/faq/`
-  - Spanish: `/docs/es/` (published) / `docs/es.md` (source)
-  - `AGENTS.md` (stable orientation)
+  - README.md (quickstart)
+  - docs/ (GitHub Pages)
+  - AGENTS.md (stable orientation)
 
 What’s completed (unambiguous)
-- Canonical Warp plan created: fceddb23-1baa-429d-97ab-67477590c565.
-- Recovery pack created/updated:
-  - `START_HERE.txt` (operational runbook)
-  - `AGENTS.md` (stable orientation; no-regress policies; jump points)
-  - `MASTER_PLAN.txt` (this file)
-- Installer hardening:
-  - `install/install.sh` now writes a launcher that forwards args at runtime (preserves "$@" in the generated file).
-- Help clarity:
-  - `tito-pdf --help` is GNU-style and options-focused (usage + flags; clear metavars like PATH/DIR/N).
-  - Narrative/examples live in `README.md` and `docs/`.
-  - `tito-pdf --version` is supported.
+- Implemented TITO-aligned convenience-mode output layout (md/ + sessions/ via --keep-sessions).
+- Updated smoke test for the new contract.
+- Updated docs to match the contract (README.md + docs/ + AGENTS.md).
+- Verified:
+  - sudo ./install/install.sh
+  - ./tests/smoke/tito_pdf_smoke.sh
+  - Processed a real PDF in ~/github/projects/AR-S2P2T/ref/ (see START_HERE.txt).
 
 What’s pending (with “done” criteria)
-- Commit + push the current contract changes (CLI/docs/installer/tests + runbook files).
-  - Done when: `git status` is clean and `origin/main` contains the updates.
-- Consider deeper tests.
-  - Options: unit tests for output-path resolution (explicit vs convenience), assets JSON schema invariants.
+- Optional: add deeper tests.
   - Done when: there is a repeatable command documented in START_HERE (even if it’s still “smoke-only”).
-- Docs consistency sweep.
-  - Done when: `README.md` + `docs/` + `AGENTS.md` match `tito-pdf --help` (installed) and explicitly warn about `tito` vs `tito-pdf` confusion.
+- Optional: docs rendering check.
+  - Done when: GitHub Pages renders and links work for the main docs pages.
+- Optional: decide what to do with legacy tracked artifacts under md/ and sessions/.
+  - Done when: either the legacy artifacts are removed/moved, or it is explicitly accepted as "samples" and new outputs are kept out of commits.
 
 Known risks / important decisions
 - `tito` is not part of this repo. If `tito --help` shows env-var-looking defaults, it’s a different tool.
-- Primary Markdown should be controlled via `--md-out` (explicit path). Avoid job/run semantics.
-  - Legacy `--id` is accepted (hidden) only for transition and prints a deprecation warning when used.
-- Explicit output paths are a no-regress contract: when outputs are requested via explicit paths, `tito-pdf` must write only to those paths (no extra folders like `md/` or `sessions/`).
+- Output naming is part of the contract:
+  - Convenience mode: md/<id>.retrieve.md and md/<id>.retrieve.tables.md
+  - Explicit output mode must not create extra folders.
 - Launcher scripts must forward arguments at runtime ("$@").
-- Avoid CRLF line endings in `*.sh` (breaks macOS/Linux).
+- Avoid CRLF line endings in *.sh (breaks macOS/Linux).
 
 References
 - START_HERE.txt (operational status + exact commands)
 - AGENTS.md (stable orientation + contracts)
 - README.md (human quickstart)
 - docs/ (GitHub Pages manual)
-- Source: `tito-pdf`
-- Smoke tests: `tests/smoke/tito_pdf_smoke.sh`
+- Source: tito-pdf
+- Smoke tests: tests/smoke/tito_pdf_smoke.sh

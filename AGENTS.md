@@ -61,10 +61,12 @@ If any of these are provided:
 
 …then `tito-pdf` writes exactly to those paths and does not create extra output folders.
 
-2) Convenience mode (no explicit output paths)
-- Default: writes `<stem>.md` next to the input file.
-- Use `--out-dir DIR` to write into a different directory.
-- Use `--tables` or `--all` to also write `<stem>.tables.md`.
+2) Convenience mode (TITO-aligned folder structure)
+- Deliverables go to `<out-dir>/md/` (default `out-dir` is CWD).
+- Naming: `md/<id>.retrieve.md` and `md/<id>.retrieve.tables.md`.
+- `--id ID` sets the output prefix (defaults to input filename stem if omitted).
+- `--tables` or `--all` also writes `<id>.retrieve.tables.md`.
+- `--keep-sessions` preserves intermediate files in `sessions/run-YYYYMMDD_HHMMSS/`.
 
 ### Modes and knobs
 Prefer `--mode` over many flags:
@@ -77,13 +79,13 @@ Overrides:
 - `--force-ocr` forces OCR even if PDF already has text
 - `--tables-lenient` increases table recall (more false positives)
 
-## Naming conventions (and where they’re defined)
-- Output stem (convenience mode): derived from input filename stem (`Path.stem`).
-- Convenience filenames:
-  - Text Markdown: `<stem>.md`
-  - Tables Markdown: `<stem>.tables.md`
+## Naming conventions (and where they're defined)
+- `--id ID`: primary identifier for convenience mode output naming.
+- Convenience filenames (TITO-aligned):
+  - Text Markdown: `md/<id>.retrieve.md`
+  - Tables Markdown: `md/<id>.retrieve.tables.md`
 - Explicit output paths: exactly as provided via flags.
-- Legacy: `--id` is accepted (hidden) only for transition, but is deprecated and prints a warning when used.
+- If `--id` is omitted, defaults to input filename stem (with a warning).
 
 Primary doc sources:
 - User-level: `README.md`
@@ -93,9 +95,9 @@ Primary doc sources:
 
 ## Non-negotiables (no-regress policies)
 - Offline/deterministic: no API calls, no network dependencies.
-- Output naming/paths must remain stable (see “Outputs” above).
+- Output naming/paths must remain stable (see "Outputs" above).
 - When explicit output paths are used, `tito-pdf` must write only to the requested paths (no extra folders).
-- Convenience mode must not create `md/` or `sessions/` folders.
+- Convenience mode creates `md/` for deliverables; `sessions/` only when `--keep-sessions` is used.
 - Assets JSON contract must remain compatible:
   - `schema_version == 1`
   - `tool == "tito-pdf"`
@@ -119,7 +121,8 @@ Primary doc sources:
   - `docs/index.md` (site home)
   - `docs/docs.md` (docs index)
   - Core refs: `docs/cli.md`, `docs/output.md`, `docs/pipeline.md`, `docs/ocr.md`, `docs/tables.md`, `docs/troubleshooting.md`
-- `md/`, `sessions/`: legacy/generated outputs from older versions (not source; do not commit)
+- `md/`: deliverables folder (generated; should not be committed). Note: this repo currently contains legacy tracked files under `md/`; avoid adding more.
+- `sessions/`: intermediate files folder when `--keep-sessions` is used (generated; should not be committed). Note: this repo currently contains legacy tracked files under `sessions/`; avoid adding more.
 
 ## Jump points (fast navigation)
 Files:
@@ -134,6 +137,13 @@ Files:
 Grep targets:
 - `md_out`
 - `explicit_output_mode`
+- `--id`
+- `run_id`
+- `md_dir`
+- `--keep-sessions`
+- `keep_sessions`
+- `.retrieve.md`
+- `.retrieve.tables.md`
 - `schema_version`
 - `assets_json`
 - `tables_auto_fallback`

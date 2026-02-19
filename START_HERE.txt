@@ -1,18 +1,18 @@
 START_HERE.txt (tito-pdf)
-Last updated: 2026-02-05
+Last updated: 2026-02-12
 Branch: main
 
 ONLY sources of truth (in this order)
 1) START_HERE.txt (this file): operational runbook + status + exact revalidation commands
-2) Warp Drive canonical plan: fceddb23-1baa-429d-97ab-67477590c565
+2) Warp Drive canonical plan: ba6e11a7-e4b8-4be1-b34a-4d74f3e99688
 3) tito-pdf --help (installed CLI contract)
 4) tito-pdf (source code)
 5) MASTER_PLAN.txt (local snapshot of the Warp plan)
 6) AGENTS.md (stable repo orientation; NOT a run log)
 
-Canonical Warp plan_id: fceddb23-1baa-429d-97ab-67477590c565
+Canonical Warp plan_id: ba6e11a7-e4b8-4be1-b34a-4d74f3e99688
 
-Quick sanity: "tito" vs "tito-pdf"
+Quick sanity: tito vs tito-pdf
 - If `tito --help` shows confusing defaults that look like env vars: that's NOT this repo.
 - This repo/tool is `tito-pdf` (installed binary):
   - command -v tito-pdf
@@ -21,63 +21,62 @@ Quick sanity: "tito" vs "tito-pdf"
 Stress-proof recovery drill (run from repo root)
 1) git --no-pager status
 2) ls -la
-3) sudo ./install/install.sh   # required after code changes (tests must use installed binary)
-4) command -v tito-pdf
-5) tito-pdf --help
-6) ./tests/smoke/tito_pdf_smoke.sh
+3) python3 -m py_compile ./tito-pdf
+4) sudo ./install/install.sh   # required after code changes (tests must use installed binary)
+5) command -v tito-pdf
+6) tito-pdf --help
+7) ./tests/smoke/tito_pdf_smoke.sh
 
 Status (DONE / VERIFIED / PENDING)
-DONE (2026-02-04)
-- Created canonical Warp plan (plan_id above)
-- Updated AGENTS.md (stable orientation + no-regress + jump points)
-- Created START_HERE.txt and MASTER_PLAN.txt
-- Fixed installer launcher heredoc to preserve "$@" at runtime (install/install.sh)
-- Updated `tito-pdf` CLI contract (source): adds `--md-out`, hides/deprecates `--id`, and makes explicit output paths write only to the requested paths (no `md/` or `sessions/`).
-- Updated `tito-pdf --help` to be GNU-style (concise usage + flags; clear metavars like PATH/DIR/N) and added `--version`.
-- Updated smoke test to validate the installed `tito-pdf` binary, assert `--id` is hidden in help, and cover `--md-out` + convenience mode.
-- Added `docs/` GitHub Pages site (Jekyll).
 
-DONE (2026-02-05)
-- Docs overhaul: rebuilt `docs/` GitHub Pages site structure (custom layout + permalinks + deep pages for CLI/output/pipeline/OCR/tables/troubleshooting/FAQ).
+DONE (2026-02-12)
+- Output layout aligned with TITO:
+  - Deliverables go to <out-dir>/md/
+    - md/<id>.retrieve.md
+    - md/<id>.retrieve.tables.md
+  - --keep-sessions preserves intermediates in sessions/run-YYYYMMDD_HHMMSS/
+  - Explicit output mode (e.g. --md-out/--tables-out) still writes ONLY to the requested paths.
+- Updated smoke test for the new contract (tests installed binary): tests/smoke/tito_pdf_smoke.sh
+- Updated docs to match the contract: README.md, docs/output.md, docs/cli.md, AGENTS.md
 
-VERIFIED (2026-02-04)
-- install/manifest.json validation: ./install/validate_manifest.sh
-- Reinstall used for verification:
+VERIFIED (2026-02-12)
+- Reinstall + smoke test:
   - sudo ./install/install.sh
-- Installed help contract (GNU-style; must show `--md-out PATH`, must not show `--id`; must support `--version`):
-  - tito-pdf --help
-  - tito-pdf --version
-- Installed-binary smoke test:
   - ./tests/smoke/tito_pdf_smoke.sh
+- Real PDF processed (installed binary):
+  - Input: ~/github/projects/AR-S2P2T/ref/10002529-430-10RE-S0104-0009_B.pdf
+  - Example:
+    tito-pdf ~/github/projects/AR-S2P2T/ref/10002529-430-10RE-S0104-0009_B.pdf --id test_real --all --out-dir /tmp/tito_test
+  - Expected outputs:
+    /tmp/tito_test/md/test_real.retrieve.md
+    /tmp/tito_test/md/test_real.retrieve.tables.md
+- keep-sessions behavior:
+  - tito-pdf ... --keep-sessions --out-dir /tmp/tito_test2
+  - Expected intermediates:
+    /tmp/tito_test2/sessions/run-YYYYMMDD_HHMMSS/prepared.pdf
+    /tmp/tito_test2/sessions/run-YYYYMMDD_HHMMSS/ocr.pdf
 
-PENDING (as of 2026-02-05)
+PENDING (as of 2026-02-12)
 - Verify GitHub Pages renders with the updated docs layout/permalinks (open the site and click through the main pages).
-- Decide whether to add deeper tests (unit tests for output-path resolution / assets JSON schema).
+- Decide whether to add additional tests (e.g. unit tests for output-path resolution / assets-json invariants).
+- Decide how to handle legacy tracked artifacts under md/ and sessions/ (they currently exist in git history).
+  - Until cleaned up, avoid running tito-pdf from the repo root without --out-dir (it will write into ./md/).
+- Keep local junk out of git:
+  - __pycache__/
 
 Minimal validations (2–6 commands)
-1) sudo ./install/install.sh
+1) python3 -m py_compile ./tito-pdf
+   - Fast syntax check.
+2) sudo ./install/install.sh
    - Required after code changes (validation is against installed binary).
-2) command -v tito-pdf
-   - Confirms which binary you will execute.
 3) tito-pdf --help
-   - Validates installed CLI usage/options (help is intentionally minimal; usage/examples live in README.md).
+   - Must show --id and --keep-sessions (GNU-style help).
 4) ./tests/smoke/tito_pdf_smoke.sh
-   - End-to-end smoke against installed binary (PDF + DOCX): explicit outputs + convenience mode + assets JSON contract.
-5) ./install/validate_manifest.sh
-   - Validates install/manifest.json structure (requires jq).
-
-Next steps (concrete)
-- If a user reports confusing help/defaults, confirm which binaries are in play:
-  command -v tito
-  command -v tito-pdf
-  tito-pdf --help
-
-- If smoke test needs to be used as a “cheap” validator:
-  ./tests/smoke/tito_pdf_smoke.sh
-  Note: it creates a temporary venv and installs python-docx to generate the DOCX input.
-
-- If docs drift:
-  - Treat `tito-pdf --help` (installed) as the contract, then update README.md + docs/ + AGENTS.md.
+   - End-to-end smoke against installed binary (PDF + DOCX).
+5) (Optional) real PDF run:
+   tito-pdf ~/github/projects/AR-S2P2T/ref/10002529-430-10RE-S0104-0009_B.pdf --id real --all --out-dir /tmp/tito_pdf_real_test
+6) (Optional) sessions:
+   tito-pdf ~/github/projects/AR-S2P2T/ref/10002529-430-10RE-S0104-0009_B.pdf --id sess --mode fast --keep-sessions --out-dir /tmp/tito_pdf_real_test2
 
 References
 - AGENTS.md

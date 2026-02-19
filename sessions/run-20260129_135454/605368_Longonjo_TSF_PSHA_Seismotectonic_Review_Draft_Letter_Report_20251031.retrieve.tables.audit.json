@@ -1,7 +1,0 @@
-{
-  "input_pdf": "/Users/averrik/Cloud/github/tito/tests/smoke/fixtures/605368_Longonjo TSF_PSHA_Seismotectonic Review_Draft Letter Report_20251031.pdf",
-  "prepared_pdf": "/Users/averrik/Cloud/github/garage/pdf/sessions/run-20260129_135454/605368_Longonjo_TSF_PSHA_Seismotectonic_Review_Draft_Letter_Report_20251031.prepared.pdf",
-  "ocr_pdf": "/Users/averrik/Cloud/github/garage/pdf/sessions/run-20260129_135454/605368_Longonjo_TSF_PSHA_Seismotectonic_Review_Draft_Letter_Report_20251031.ocr.pdf",
-  "ocr_ran": false,
-  "tables": []
-}

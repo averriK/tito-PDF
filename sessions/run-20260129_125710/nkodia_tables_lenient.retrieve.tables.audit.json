@@ -1,7 +1,0 @@
-{
-  "input_pdf": "/Users/averrik/Cloud/github/tito/tests/smoke/fixtures/Nkodia2022.pdf",
-  "prepared_pdf": "/Users/averrik/Cloud/github/garage/pdf/sessions/run-20260129_125710/nkodia_tables_lenient.prepared.pdf",
-  "ocr_pdf": "/Users/averrik/Cloud/github/garage/pdf/sessions/run-20260129_125710/nkodia_tables_lenient.ocr.pdf",
-  "ocr_ran": false,
-  "tables": []
-}

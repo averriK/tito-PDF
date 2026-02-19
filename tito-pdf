@@ -7,12 +7,15 @@ Supported inputs:
 - .pdf
 - .docx
 
-Outputs:
-- Primary Markdown: --md-out PATH (recommended) or convenience mode writes <stem>.md
-  next to the input file (or under --out-dir).
-- Tables Markdown (optional): --tables-out PATH or convenience mode writes <stem>.tables.md
-- Plaintext (optional): --raw-text-out PATH
-- Assets/metrics JSON (optional): --assets-json PATH
+Outputs (convenience mode):
+- Deliverables go to ./md/ (or --out-dir):
+  - md/<id>.retrieve.md  (primary text)
+  - md/<id>.retrieve.tables.md  (tables, when --tables or --all)
+- Use --id <id> to set the output prefix (defaults to input filename stem).
+- Use --keep-sessions to preserve intermediate files in sessions/run-YYYYMMDD_HHMMSS/.
+
+Outputs (explicit mode):
+- --md-out PATH, --tables-out PATH, etc. write exactly where specified.
 
 Notes:
 - PDF preparation requires `qpdf`.
@@ -23,6 +26,7 @@ Notes:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import platform
@@ -1114,11 +1118,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--out-dir",
         default="",
         metavar="DIR",
-        help="Convenience output directory (default: next to input). Ignored when any explicit output path is set.",
+        help="Base directory for deliverables (default: CWD). Deliverables go to <out-dir>/md/.",
     )
 
-    # Legacy/transitional: accept --id but do not promote it.
-    ap.add_argument("--id", dest="legacy_id", default="", help=argparse.SUPPRESS)
+    # ID for output naming (convenience mode)
+    ap.add_argument(
+        "--id",
+        default="",
+        metavar="ID",
+        help="Identifier for output filenames (default: input filename stem). Outputs: md/<id>.retrieve.md",
+    )
+
+    # Keep intermediate files in sessions/
+    ap.add_argument(
+        "--keep-sessions",
+        action="store_true",
+        help="Preserve intermediate files in sessions/run-YYYYMMDD_HHMMSS/ (for debugging/audit).",
+    )
 
     # Explicit outputs (paths)
     ap.add_argument("--raw-text-out", default="", metavar="PATH", help="Write extracted plaintext (UTF-8) to PATH")
@@ -1147,13 +1163,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--max-pages", type=int, default=0, metavar="N", help="Limit pages processed (debug; 0 = all)")
     args = ap.parse_args(argv)
 
-    legacy_id = str(getattr(args, "legacy_id", "") or "").strip()
-    if legacy_id:
-        _eprint(
-            "WARNING: --id is deprecated and will be removed. "
-            "tito-pdf is a standalone single-document tool; "
-            "derive output names from the input filename or use --md-out for an explicit path."
-        )
+    run_id = str(getattr(args, "id", "") or "").strip()
+    keep_sessions = bool(getattr(args, "keep_sessions", False))
 
     input_path = Path(args.input_path).expanduser().resolve()
     if not input_path.is_file():
@@ -1208,12 +1219,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 2
 
     else:
-        # Convenience mode: write outputs next to input (or under --out-dir).
-        out_dir = _opt_dir(getattr(args, "out_dir", ""))
-        if out_dir is None:
-            out_dir = input_path.parent
-        else:
-            out_dir.mkdir(parents=True, exist_ok=True)
+        # Convenience mode: write deliverables to <out-dir>/md/
+        base_dir = _opt_dir(getattr(args, "out_dir", ""))
+        if base_dir is None:
+            base_dir = Path.cwd()
+
+        md_dir = base_dir / "md"
+        md_dir.mkdir(parents=True, exist_ok=True)
+
+        # Determine output ID
+        if not run_id:
+            run_id = _slugify_id(input_path.stem)
+            _eprint(f"INFO: --id not provided; using '{run_id}' (from input filename)")
 
         do_tables = bool(getattr(args, "tables", False)) or bool(getattr(args, "all", False))
         do_md = bool(getattr(args, "text", False)) or bool(getattr(args, "all", False))
@@ -1221,9 +1238,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             do_md = True  # default: markdown only
 
         if do_md:
-            md_out = (out_dir / f"{input_path.stem}.md").resolve()
+            md_out = (md_dir / f"{run_id}.retrieve.md").resolve()
         if do_tables:
-            tables_out = (out_dir / f"{input_path.stem}.tables.md").resolve()
+            tables_out = (md_dir / f"{run_id}.retrieve.tables.md").resolve()
 
     # Resolve high-level mode into effective knobs (explicit flags still win).
     mode = str(getattr(args, "mode", "robust") or "robust")
@@ -1305,8 +1322,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     def _write_json_atomic(path: Path, obj: Any) -> None:
         _write_text_atomic(path, json.dumps(obj, indent=2, ensure_ascii=False) + "\n")
 
-    with tempfile.TemporaryDirectory(prefix="tito-pdf-") as tmp_dir:
-        work_dir = Path(tmp_dir)
+    # Session/work directory handling
+    # If --keep-sessions, create a persistent session dir; otherwise use a temp dir that gets cleaned up.
+    with contextlib.ExitStack() as stack:
+        if keep_sessions:
+            base_dir_for_sessions = _opt_dir(getattr(args, "out_dir", ""))
+            if base_dir_for_sessions is None:
+                base_dir_for_sessions = Path.cwd()
+            work_dir = base_dir_for_sessions / "sessions" / _ts_run_id()
+            work_dir.mkdir(parents=True, exist_ok=True)
+            _eprint(f"Session dir: {work_dir}")
+        else:
+            tmp_dir = stack.enter_context(tempfile.TemporaryDirectory(prefix="tito-pdf-"))
+            work_dir = Path(tmp_dir)
 
         if input_kind == "pdf":
             prepared_pdf = work_dir / "prepared.pdf"
@@ -1418,86 +1446,86 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "tables": audit,
                 }
 
-    # Write requested outputs (after extraction succeeded)
-    if md_out is not None:
-        if md_text is None:
-            _eprint("ERROR: failed to produce Markdown output")
-            return 1
-        _write_text_atomic(md_out, md_text)
-        text_md_written = md_out
-        _eprint(f"Wrote: {md_out}")
+        # Write requested outputs (after extraction succeeded, still inside context)
+        if md_out is not None:
+            if md_text is None:
+                _eprint("ERROR: failed to produce Markdown output")
+                return 1
+            _write_text_atomic(md_out, md_text)
+            text_md_written = md_out
+            _eprint(f"Wrote: {md_out}")
 
-    if raw_text_out is not None:
-        if raw_text is None:
-            _eprint("ERROR: failed to produce raw text output")
-            return 1
-        _write_text_atomic(raw_text_out, raw_text)
-        raw_text_written = raw_text_out
-        _eprint(f"Wrote: {raw_text_out}")
-
-    if tables_out is not None:
-        if tables_md_text is None:
-            _eprint("ERROR: failed to produce tables output")
-            return 1
-        _write_text_atomic(tables_out, tables_md_text)
-        tables_md_written = tables_out
-        _eprint(f"Wrote: {tables_out}")
-
-    if tables_audit_out is not None:
-        if tables_audit_payload is None:
-            _eprint("ERROR: failed to produce tables audit output")
-            return 1
-        _write_json_atomic(tables_audit_out, tables_audit_payload)
-        tables_audit_written = tables_audit_out
-        _eprint(f"Wrote: {tables_audit_out}")
-
-    if assets_json_out is not None:
-        payload: Dict[str, Any] = {
-            "schema_version": 1,
-            "tool": "tito-pdf",
-            "started_at_utc": started_at_utc,
-            "finished_at_utc": _utc_now_iso(),
-            "duration_ms": int((time.monotonic() - t0) * 1000),
-            "mode": str(mode),
-            "input_kind": str(input_kind),
-            "input_path": str(input_path),
-            "input_size_bytes": int(input_path.stat().st_size),
-            "timings_ms": dict(stage_timings_ms),
-            "metrics": {
-                "raw_text_bytes": int(raw_text_bytes),
-                "raw_text_lines": int(raw_text_lines),
-                "tables_count": int(tables_count),
-            },
-        }
-
-        outputs: Dict[str, Any] = {}
-        if text_md_written is not None:
-            outputs["text_md"] = str(text_md_written)
-            payload["md_out"] = str(text_md_written)
-        if raw_text_written is not None:
-            outputs["raw_text"] = str(raw_text_written)
-        if tables_md_written is not None:
-            outputs["tables_md"] = str(tables_md_written)
-        if tables_audit_written is not None:
-            outputs["tables_audit_json"] = str(tables_audit_written)
-        if outputs:
-            payload["outputs"] = outputs
-
-        # Preserve legacy top-level keys for integrations.
         if raw_text_out is not None:
-            payload["raw_text_out"] = str(raw_text_out)
-            payload["raw_text_bytes"] = int(raw_text_bytes)
-            payload["raw_text_lines"] = int(raw_text_lines)
+            if raw_text is None:
+                _eprint("ERROR: failed to produce raw text output")
+                return 1
+            _write_text_atomic(raw_text_out, raw_text)
+            raw_text_written = raw_text_out
+            _eprint(f"Wrote: {raw_text_out}")
+
         if tables_out is not None:
-            payload["tables_out"] = str(tables_out)
+            if tables_md_text is None:
+                _eprint("ERROR: failed to produce tables output")
+                return 1
+            _write_text_atomic(tables_out, tables_md_text)
+            tables_md_written = tables_out
+            _eprint(f"Wrote: {tables_out}")
+
         if tables_audit_out is not None:
-            payload["tables_audit_out"] = str(tables_audit_out)
+            if tables_audit_payload is None:
+                _eprint("ERROR: failed to produce tables audit output")
+                return 1
+            _write_json_atomic(tables_audit_out, tables_audit_payload)
+            tables_audit_written = tables_audit_out
+            _eprint(f"Wrote: {tables_audit_out}")
 
-        if toolchain is not None:
-            payload["toolchain"] = toolchain
+        if assets_json_out is not None:
+            payload: Dict[str, Any] = {
+                "schema_version": 1,
+                "tool": "tito-pdf",
+                "started_at_utc": started_at_utc,
+                "finished_at_utc": _utc_now_iso(),
+                "duration_ms": int((time.monotonic() - t0) * 1000),
+                "mode": str(mode),
+                "input_kind": str(input_kind),
+                "input_path": str(input_path),
+                "input_size_bytes": int(input_path.stat().st_size),
+                "timings_ms": dict(stage_timings_ms),
+                "metrics": {
+                    "raw_text_bytes": int(raw_text_bytes),
+                    "raw_text_lines": int(raw_text_lines),
+                    "tables_count": int(tables_count),
+                },
+            }
 
-        _write_json_atomic(assets_json_out, payload)
-        _eprint(f"Wrote: {assets_json_out}")
+            outputs: Dict[str, Any] = {}
+            if text_md_written is not None:
+                outputs["text_md"] = str(text_md_written)
+                payload["md_out"] = str(text_md_written)
+            if raw_text_written is not None:
+                outputs["raw_text"] = str(raw_text_written)
+            if tables_md_written is not None:
+                outputs["tables_md"] = str(tables_md_written)
+            if tables_audit_written is not None:
+                outputs["tables_audit_json"] = str(tables_audit_written)
+            if outputs:
+                payload["outputs"] = outputs
+
+            # Preserve legacy top-level keys for integrations.
+            if raw_text_out is not None:
+                payload["raw_text_out"] = str(raw_text_out)
+                payload["raw_text_bytes"] = int(raw_text_bytes)
+                payload["raw_text_lines"] = int(raw_text_lines)
+            if tables_out is not None:
+                payload["tables_out"] = str(tables_out)
+            if tables_audit_out is not None:
+                payload["tables_audit_out"] = str(tables_audit_out)
+
+            if toolchain is not None:
+                payload["toolchain"] = toolchain
+
+            _write_json_atomic(assets_json_out, payload)
+            _eprint(f"Wrote: {assets_json_out}")
 
     _eprint("OK")
     return 0

@@ -61,13 +61,24 @@ Recommended (explicit primary output):
 tito-pdf /path/to/doc.pdf --md-out /tmp/doc.md
 ```
 
-Convenience mode (no explicit output paths):
+Convenience mode (TITO-aligned folder structure):
 
 ```bash
-tito-pdf /path/to/doc.pdf                # writes /path/to/doc.md
-tito-pdf /path/to/doc.pdf --out-dir out   # writes out/doc.md
-tito-pdf /path/to/doc.pdf --tables --out-dir out  # writes out/doc.tables.md
-tito-pdf /path/to/doc.pdf --all --out-dir out     # writes out/doc.md + out/doc.tables.md
+tito-pdf /path/to/doc.pdf --id myrun          # writes md/myrun.retrieve.md
+tito-pdf /path/to/doc.pdf --id myrun --tables # writes md/myrun.retrieve.md + md/myrun.retrieve.tables.md
+tito-pdf /path/to/doc.pdf --id myrun --all    # same as above
+```
+
+With `--out-dir`:
+
+```bash
+tito-pdf /path/to/doc.pdf --id myrun --out-dir out   # writes out/md/myrun.retrieve.md
+```
+
+Preserve intermediate files for debugging:
+
+```bash
+tito-pdf /path/to/doc.pdf --id myrun --keep-sessions  # creates sessions/run-YYYYMMDD_HHMMSS/
 ```
 
 DOCX is also supported:

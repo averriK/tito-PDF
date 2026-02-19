@@ -76,11 +76,16 @@ def write_minimal_pdf(path: str) -> None:
 
 write_minimal_pdf(os.environ["PDF_PATH"])
 PY
-# Ensure the installed CLI contract is visible and does not promote legacy TITO semantics.
+# Ensure the installed CLI contract is visible.
 HELP_OUTPUT="$(tito-pdf --help 2>&1)"
 
-if printf '%s\n' "$HELP_OUTPUT" | grep -q -- "--id"; then
-  echo "ERROR: tito-pdf --help should not show --id" >&2
+# --id and --keep-sessions must be visible (TITO-aligned convenience mode).
+if ! printf '%s\n' "$HELP_OUTPUT" | grep -q -- "--id ID"; then
+  echo "ERROR: tito-pdf --help should show '--id ID'" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$HELP_OUTPUT" | grep -q -- "--keep-sessions"; then
+  echo "ERROR: tito-pdf --help should show '--keep-sessions'" >&2
   exit 1
 fi
 
@@ -124,13 +129,18 @@ tito-pdf "$PDF_PATH" \
 grep -q "Hello PDF" "$OUT_DIR/pdf.md"
 grep -q "Hello PDF" "$OUT_DIR/pdf.raw.txt"
 
-# Convenience mode: write next to input (or under --out-dir) without explicit outputs.
+# Convenience mode: deliverables go to <out-dir>/md/<id>.retrieve.md
 CONV_DIR="$OUT_DIR/convenience"
 mkdir -p "$CONV_DIR"
-tito-pdf "$PDF_PATH" --mode fast --out-dir "$CONV_DIR" >/dev/null
+tito-pdf "$PDF_PATH" --mode fast --out-dir "$CONV_DIR" --id smoke_test >/dev/null
 
-test -s "$CONV_DIR/hello.md"
-grep -q "Hello PDF" "$CONV_DIR/hello.md"
+test -s "$CONV_DIR/md/smoke_test.retrieve.md"
+grep -q "Hello PDF" "$CONV_DIR/md/smoke_test.retrieve.md"
+
+# Convenience mode with --tables: both outputs go to md/
+tito-pdf "$PDF_PATH" --mode fast --out-dir "$CONV_DIR" --id smoke_all --all >/dev/null
+test -s "$CONV_DIR/md/smoke_all.retrieve.md"
+test -s "$CONV_DIR/md/smoke_all.retrieve.tables.md"
 
 # Create a tiny DOCX (needs python-docx).
 VENV_DIR="$TMP_DIR/venv"

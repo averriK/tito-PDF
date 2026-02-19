@@ -70,10 +70,12 @@ In explicit output mode:
 2) Convenience mode
 Used when **no** explicit output paths are set.
 
-In convenience mode:
-- default output is `<stem>.md` next to the input.
-- `--out-dir DIR` changes the destination directory.
-- `--tables` or `--all` adds `<stem>.tables.md`.
+In convenience mode (TITO-aligned folder structure):
+- Deliverables go to `<out-dir>/md/` (default `out-dir` is CWD).
+- Naming: `md/<id>.retrieve.md` and `md/<id>.retrieve.tables.md`.
+- `--id ID` sets the output prefix (defaults to input filename stem if omitted).
+- `--tables` or `--all` adds `<id>.retrieve.tables.md`.
+- `--keep-sessions` preserves intermediate files in `sessions/run-YYYYMMDD_HHMMSS/`.
 
 ## Output paths (explicit)
 ### `--md-out PATH`
@@ -111,10 +113,24 @@ See: [Assets JSON]({{ "/docs/assets-json/" | relative_url }}).
 
 ## Convenience directory
 ### `--out-dir DIR`
-Convenience-mode output directory.
+Base directory for deliverables.
 
+- Deliverables go to `<out-dir>/md/`.
+- Default: current working directory.
 - Used only when **no explicit output paths** are provided.
 - If you provide any explicit output path, `--out-dir` is ignored.
+
+### `--id ID`
+Identifier for output filenames.
+
+- Outputs: `md/<id>.retrieve.md`, `md/<id>.retrieve.tables.md`.
+- Default: input filename stem (with a warning).
+
+### `--keep-sessions`
+Preserve intermediate files in `sessions/run-YYYYMMDD_HHMMSS/`.
+
+- Useful for debugging and audit.
+- Intermediates include: prepared.pdf, ocr.pdf.
 
 ## Convenience toggles
 These toggles only matter in convenience mode.
@@ -157,14 +173,6 @@ See: [OCR]({{ "/docs/ocr/" | relative_url }}).
 Limit pages processed. Used for debugging performance and false positives.
 
 - `0` means “all pages”.
-
-## Deprecated / hidden
-### `--id` (hidden, deprecated)
-`--id` is accepted for transition but is hidden from `--help` and prints a deprecation warning when used.
-
-Rationale:
-- `tito-pdf` is a single-document converter.
-- Output naming should be derived from the input filename or controlled with explicit output paths.
 
 ## Exit codes
 - `0`: success
